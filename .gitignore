@@ -1,0 +1,8 @@
+.DS_Store
+/__pycache__
+Predictions.csv
+_WANNIA_8MB_MURESK-nmi-loads.csv
+TestBasics.py
+result.json
+Interval_based_predictions.p
+my_json_file.json
