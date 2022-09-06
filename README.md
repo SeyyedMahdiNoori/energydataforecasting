@@ -1,6 +1,6 @@
 # Introuction
 
-In this repository, you can find the functions and data required for load forecasting in the Converge project. 
+In this repository, you can find the functions required for load forecasting in the Converge project. 
 
 This repository contains the following forecasting methods:
 

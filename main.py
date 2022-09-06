@@ -148,15 +148,14 @@ def run_prallel_Interval_backtest(customers_nmi):
     
 
 # Run the parralel function
-customers_nmi = customers_nmi[0:5]
 predictions_prallel = pool_executor_Backtest(run_prallel_Interval_backtest,customers_nmi)
 
-# Get the results and save them into a single dictionary \
+# Get the results and save them into a single dictionary 
 predictions_output = {}
 for res in predictions_prallel:
     predictions_output[int(res.columns[0])] = res.rename(columns={res.columns[0]: 'pred'})
 
-# saving predictions to a file
+# saving predictions to a json file
 import json
 from copy import deepcopy as copy
 copy_predictions_output = copy(predictions_output)
@@ -165,13 +164,13 @@ for c in copy_predictions_output.keys():
 with open("my_json_file.json","w") as f:
     json.dump(copy_predictions_output,f)
 
-# reading predictions from file
-with open("my_json_file.json","r") as f:
-    loaded_predictions_output = json.load(f)
 
-for l in list(loaded_predictions_output.keys()):
-    loaded_predictions_output[int(l)] = pd.read_json(json.dumps(loaded_predictions_output[l]))
-    del loaded_predictions_output[l]
+# # To read the predictions from the jason file use the following lines
+# with open("my_json_file.json","r") as f:
+#     loaded_predictions_output = json.load(f)
 
-print(loaded_predictions_output)
+# for l in list(loaded_predictions_output.keys()):
+#     loaded_predictions_output[int(l)] = pd.read_json(json.dumps(loaded_predictions_output[l]))
+#     del loaded_predictions_output[l]
+
 
