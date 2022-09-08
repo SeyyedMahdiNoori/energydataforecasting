@@ -35,3 +35,11 @@ data = data.loc[filt].copy()
 data.set_index(['nmi', 'datetime'], inplace=True)
 
 # To obtain the data for each nmi --> data.loc[nmi]
+
+
+# Set features of the predections
+input_features = {'Start training': '2022-07-01',
+                     'End training': '2022-07-28',
+                     'Last-observed-window': '2022-07-28',
+                     'Window size': 48 ,
+                     'Windows to be forecasted':    2      }
