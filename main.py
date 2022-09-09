@@ -10,7 +10,7 @@
 
 # Initialize variables
 from Load_Forecasting import customers_nmi
-customers_nmi = customers_nmi[0:8]  # Use this line for testing (the number of nmi in the _WANNIA_8MB_MURESK-nmi-loads.csv is 1292. This line takes the first 8 and produces the results)
+# customers_nmi = customers_nmi[0:8]  # Use this line for testing (the number of nmi in the _WANNIA_8MB_MURESK-nmi-loads.csv is 1292. This line takes the first 8 and produces the results)
 from ReadData import input_features # To set the data feature like start and end date for training go to the ReadData file
 
 

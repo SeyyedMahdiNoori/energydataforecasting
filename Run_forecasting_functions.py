@@ -38,15 +38,16 @@ def run_prallel_forecast_pointbased(customers_nmi,input_features):
 def forecast_pointbased(customers_nmi,input_features):
 
     predictions_prallel = pool_executor_forecast_pointbased(run_prallel_forecast_pointbased,customers_nmi,input_features)
-    # Get the results and generate the csv file
+    
+    # Aggregate the results from the parallelised function into a list
     predictions_output = [res for res in predictions_prallel]
     predictions_output = pd.concat(predictions_output, axis=1)
 
     return predictions_output
 
-# ==================================================================================================
-# Method (2): Recursive multi-step probabilistic forecasting method
-# ==================================================================================================
+# # ==================================================================================================
+# # Method (2): Recursive multi-step probabilistic forecasting method
+# # ==================================================================================================
 
 # This function is used to parallelised the forecasting for each nmi
 def pool_executor_forecast_interval(function_name,customers_nmi,input_features):
@@ -74,9 +75,11 @@ def forecast_interval(customers_nmi,input_features):
     
     predictions_prallel = pool_executor_forecast_interval(run_prallel_Interval_Load_Forecast,customers_nmi,input_features)
 
+    # Aggregate the results from the parallelised function into a dictionary
     predictions_output_interval = {}
     for res in predictions_prallel:
         predictions_output_interval[int(res.columns[0])] = res.rename(columns={res.columns[0]: 'pred'})
+    
     return predictions_output_interval
 
 
@@ -103,4 +106,5 @@ def read_json_interval():
     for l in list(loaded_predictions_output.keys()):
         loaded_predictions_output[int(l)] = pd.read_json(json.dumps(loaded_predictions_output[l]))
         del loaded_predictions_output[l]
+    
     return(loaded_predictions_output)

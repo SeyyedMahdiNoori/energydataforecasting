@@ -5,6 +5,8 @@ from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
 from Load_Forecasting import customers, customers_nmi
 from ReadData import input_features
+import numpy as np
+from sklearn.metrics import mean_squared_error
 
 # Set this value to choose an nmi from customers_nmi 
 # Example
@@ -98,7 +100,7 @@ plt.show()
 
 
 
-# Plot Predition vs Real data using Backtest approach
+# Plot Predition vs Real data using point-based approach
 # ==============================================================================
 import datetime
 
@@ -108,6 +110,36 @@ predictions= customers[nmi].predictions
 fig, ax = plt.subplots(figsize=(12, 3.5))
 customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.show()   
+
+
+# Plot Predition vs Real data using point-based approach with and without forecaster optimiser
+# ==============================================================================
+import datetime
+
+customers[nmi].Generate_forecaster_object(input_features)
+customers[nmi].Generate_prediction(input_features)
+predictions= customers[nmi].predictions
+
+customers[nmi].Generate_optimised_forecaster_object(input_features)
+customers[nmi].Generate_prediction(input_features)
+predictions_optimised= customers[nmi].predictions
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
+predictions_optimised.pred.plot(linewidth=2, label='prediction-optimised', ax=ax)
+
+y_true = np.array(list(customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()]))
+y_pred = np.array(list(predictions.pred))
+y_pred_optimised = np.array(list(predictions_optimised.pred))
+mses = ((y_true-y_pred)**2).mean()
+mses_optimised = ((y_true-y_pred_optimised)**2).mean()
+print(f"error based (mse): {mses}")
+print(f"error optimised (mse): {mses_optimised}")
+
 ax.set_title('Prediction vs real demand')
 ax.legend()
 plt.show()   

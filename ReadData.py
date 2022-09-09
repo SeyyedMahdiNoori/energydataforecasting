@@ -39,7 +39,7 @@ data.set_index(['nmi', 'datetime'], inplace=True)
 
 # Set features of the predections
 input_features = {'Start training': '2022-07-01',
-                     'End training': '2022-07-28',
-                     'Last-observed-window': '2022-07-28',
+                     'End training': '2022-07-27',
+                     'Last-observed-window': '2022-07-27',
                      'Window size': 48 ,
-                     'Windows to be forecasted':    2      }
+                     'Windows to be forecasted':    3      }
