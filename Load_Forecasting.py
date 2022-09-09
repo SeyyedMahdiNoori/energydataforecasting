@@ -51,6 +51,13 @@ class customers_class:
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
         self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data.active_power.loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
 
+    def Generate_interval_prediction(self,input_features):
+        # Generate predictions using normal forecasting
+        Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
+        self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data.active_power.loc[input_features['Last-observed-window']]).set_index(Newindex)
+
+
+
 
     # # This function outputs the forecasts using a Recursive multi-step probabilistic forecasting method of each nmi individually
     # def Interval_Load_Forecast(self):
