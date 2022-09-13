@@ -16,8 +16,8 @@ nmi = customers_nmi[10]
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4))
-customers[nmi].data_train.active_power.plot(ax=ax, label='train', linewidth=1)
-# customers[nmi].data_test.active_power.plot(ax=ax, label='test', linewidth=1)
+customers[nmi].data_train[input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
+# customers[nmi].data_test[input_features['Forecasted_param']].plot(ax=ax, label='test', linewidth=1)
 ax.set_title('Electricity demand')
 ax.legend()
 plt.show()
@@ -33,13 +33,13 @@ grid = plt.GridSpec(nrows=8, ncols=1, hspace=0.6, wspace=0)
 main_ax = fig.add_subplot(grid[1:3, :])
 zoom_ax = fig.add_subplot(grid[5:, :])
 
-customers[nmi].data.active_power.plot(ax=main_ax, c='black', alpha=0.5, linewidth=0.5)
-min_y = min(customers[nmi].data.active_power)
-max_y = max(customers[nmi].data.active_power)
+customers[nmi].data[input_features['Forecasted_param']].plot(ax=main_ax, c='black', alpha=0.5, linewidth=0.5)
+min_y = min(customers[nmi].data[input_features['Forecasted_param']])
+max_y = max(customers[nmi].data[input_features['Forecasted_param']])
 main_ax.fill_between(zoom, min_y, max_y, facecolor='blue', alpha=0.5, zorder=0)
 main_ax.set_xlabel('')
 
-customers[nmi].data.loc[zoom[0]: zoom[1]].active_power.plot(ax=zoom_ax, color='blue', linewidth=2)
+customers[nmi].data.loc[zoom[0]: zoom[1]][input_features['Forecasted_param']].plot(ax=zoom_ax, color='blue', linewidth=2)
 
 main_ax.set_title(f'Electricity active_power: {customers[nmi].data.index.min()}, {customers[nmi].data.index.max()}', fontsize=14)
 zoom_ax.set_title(f'Electricity active_power: {zoom}', fontsize=14)
@@ -89,13 +89,13 @@ fig.suptitle('')
 # Autocorrelation plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(7, 3))
-plot_acf(customers[nmi].data.active_power, ax=ax, lags=120)
+plot_acf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
 plt.show()
 
 # Partial autocorrelation plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(7, 3))
-plot_pacf(customers[nmi].data.active_power, ax=ax, lags=120)
+plot_pacf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
 plt.show()
 
 
@@ -108,7 +108,7 @@ customers[nmi].Generate_forecaster_object(input_features)
 customers[nmi].Generate_prediction(input_features)
 predictions= customers[nmi].predictions
 fig, ax = plt.subplots(figsize=(12, 3.5))
-customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
 ax.set_title('Prediction vs real demand')
 ax.legend()
@@ -128,11 +128,11 @@ customers[nmi].Generate_prediction(input_features)
 predictions_optimised= customers[nmi].predictions
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
-customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
 predictions_optimised.pred.plot(linewidth=2, label='prediction-optimised', ax=ax)
 
-y_true = np.array(list(customers[nmi].data.active_power.loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()]))
+y_true = np.array(list(customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()]))
 y_pred = np.array(list(predictions.pred))
 y_pred_optimised = np.array(list(predictions_optimised.pred))
 mses = ((y_true-y_pred)**2).mean()
@@ -155,7 +155,7 @@ customers[nmi].Generate_interval_prediction(input_features)
 predictions_interval= customers[nmi].interval_predictions
 
 fig, ax=plt.subplots(figsize=(11, 3))
-customers[nmi].data.active_power.loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 ax.fill_between(
     predictions_interval.index,
     predictions_interval['lower_bound'],

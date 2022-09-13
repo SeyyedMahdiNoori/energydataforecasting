@@ -26,11 +26,7 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 class customers_class:
 
-    # windowsize = input_features['Window size']
-    # stepstoBeforecasted = input_features['Windows to be forecasted'] * windowsize
-    # Start_training = input_features['Start training']
-    # End_training = input_features['End training']
-    # Last_observed_window = input_features['Last-observed-window']
+    Forecasted_param = input_features['Forecasted_param']    
 
     def __init__(self, nmi,input_features):
 
@@ -42,12 +38,12 @@ class customers_class:
     def Generate_forecaster_object(self,input_features):
         # Create a forecasting object
         self.forecaster = ForecasterAutoreg(
-                regressor = make_pipeline(StandardScaler(), Ridge()),
+                regressor = make_pipeline(StandardScaler(), Ridge()),  
                 lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
             )
 
         # Train the forecaster using the train data
-        self.forecaster.fit(y=self.data_train.active_power)
+        self.forecaster.fit(y=self.data_train[self.Forecasted_param])
 
     # This function optimises the parameters of the forecaster
     def Generate_optimised_forecaster_object(self,input_features):
@@ -70,13 +66,13 @@ class customers_class:
         # optimise the forecaster
         grid_search_forecaster(
                         forecaster  = self.forecaster,
-                        y           = self.data_train.active_power,
+                        y           = self.data_train[self.Forecasted_param],
                         param_grid  = param_grid,
                         # lags_grid   = lags_grid,
                         steps       =  48, # input_features['Window size'],
                         metric      = 'mean_absolute_error',
                         # refit       = False,
-                        initial_train_size = len(self.data_train.active_power) - input_features['Window size'] * 10,
+                        initial_train_size = len(self.data_train[self.Forecasted_param]) - input_features['Window size'] * 10,
                         # fixed_train_size   = False,
                         return_best = True,
                         verbose     = False
@@ -86,7 +82,7 @@ class customers_class:
     def Generate_prediction(self,input_features):
         # Generate predictions using normal forecasting
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
-        self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data.active_power.loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
+        self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[self.Forecasted_param].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
 
     def Generate_interval_prediction(self,input_features):
         # Generate predictions using normal forecasting
@@ -95,12 +91,57 @@ class customers_class:
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
         
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data.active_power.loc[input_features['Last-observed-window']]).set_index(Newindex)
+        self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[self.Forecasted_param].loc[input_features['Last-observed-window']]).set_index(Newindex)
+
+    #######
+    # To be added
+    #######
+    # # This function outputs the forecasts using a Recursive multi-step point-forecasting method of each nmi individually considering reactive power an exogenous variable 
+    # def Generate_forecaster_object_with_exogenous(self,input_features):
+    #     # Create a forecasting object
+    #     self.forecaster = ForecasterAutoreg(
+    #             regressor = make_pipeline(StandardScaler(), Ridge()),
+    #             lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+    #         )
+
+    #     # Train the forecaster using the train data
+    #     self.forecaster.fit(y=self.data_train[self.Forecasted_param],
+    #                         exog = self.data_train.reactive_power) 
+
+    # def Generate_predictio_with_exogenous(self,input_features):
+    #     # Generate predictions using normal forecasting
+    #     Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
+    #     self.predictions = self.forecaster.predict(steps = input_features['Windows to be forecasted'] * input_features['Window size'], 
+    #                                                last_window = self.data[self.Forecasted_param].loc[input_features['Last-observed-window']],
+    #                                                exog = self.data.reactive_power.loc[input_features['Last-observed-window']]
+    #                                                 ).to_frame().set_index(Newindex)
+
 
 
 # Create an instance for each nmi in the customers_class class
 customers = {}
 for customer in customers_nmi:
     customers[customer] = customers_class(customer,input_features)
+
+
+
+
+# # For testing
+# import math
+# import matplotlib.pyplot as plt
+# PF = 0.95
+# A_reac = customers[customers_nmi[3]].data.reactive_power.loc['2022-07-28']
+# A_dem = A_reac * PF/math.sqrt(1-PF**2)
+# A_agg = customers[customers_nmi[3]].data.active_power.loc['2022-07-28']
+
+# A_pv = A_dem -  A_agg
+
+# fig, ax = plt.subplots(figsize=(12, 4))
+# A_pv.plot(ax=ax, label='train', linewidth=1)
+# # customers[nmi].data_test[input_features['Forecasted_param']].plot(ax=ax, label='test', linewidth=1)
+# ax.set_title('Electricity demand')
+# ax.legend()
+# plt.show()
+
 
 
