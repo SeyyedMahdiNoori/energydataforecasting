@@ -31,10 +31,14 @@ filt = (data['datetime'] < '2022-07-31')
 data = data.loc[filt].copy()
 # #######
 
-# # Make datetime index of the dataset
+# Make datetime index of the dataset
 data.set_index(['nmi', 'datetime'], inplace=True)
 
-# To obtain the data for each nmi --> data.loc[nmi]
+# save unique dates of the data
+datetimes = data.index.unique('datetime')
+
+# To obtain the data for each nmi: --> data.loc[nmi]
+# To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
 
 
@@ -47,15 +51,19 @@ input_features = { 'Forecasted_param': 'active_power',   # set this parameter to
                     'Windows to be forecasted':    3      }
 
 
-
-
-# # Check which nmis have PV and their load type
-# # ==============================================================================
-# # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
+# Add PV instalation and size, and load type to the data from nmi.csv file
+# ==============================================================================
+# nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
 data_nmi = pd.read_csv('nmi.csv')
 data_nmi.set_index(data_nmi['nmi'],inplace=True)
-data['has_pv'] = data.active_power.copy()
-data['customer_kind'] = data.active_power.copy()
+
+import itertools
+data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
+data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
+data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
+
+# This is line is added to prevent the aggregated demand from being negative when there is not PV
+# Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
 for i in customers_nmi:
-    data['has_pv'].loc[i]  = [data_nmi.loc[i]['has_pv']] * len(data['has_pv'].loc[i])
-    data['customer_kind'].loc[i]  = [data_nmi.loc[i]['customer_kind']] * len(data['customer_kind'].loc[i])
+    if data.loc[i].pv_system_size[0] == 0:
+        data.at[i,'active_power'] = data.loc[i].active_power.abs()

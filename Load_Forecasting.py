@@ -15,7 +15,7 @@ from datetime import date, timedelta
 
 
 # Get data from the ReadData script
-from ReadData import data, customers_nmi, input_features
+from ReadData import data, customers_nmi, input_features,datetimes
 
 # Warnings configuration
 import warnings
@@ -125,23 +125,36 @@ for customer in customers_nmi:
 
 
 
+# ==============================================================================
+# Methods for disagregation
+# ==============================================================================
 
-# # For testing
+# #### Method 1
+# # # Reactive power as an indicator 
+
 # import math
 # import matplotlib.pyplot as plt
 # PF = 0.95
-# A_reac = customers[customers_nmi[3]].data.reactive_power.loc['2022-07-28']
+# date_of_interest = '2022-07-28'
+# nmi_test = 5
+
+# A_reac = customers[customers_nmi[nmi_test]].data.reactive_power.loc[date_of_interest]
 # A_dem = A_reac * PF/math.sqrt(1-PF**2)
-# A_agg = customers[customers_nmi[3]].data.active_power.loc['2022-07-28']
+# A_agg = customers[customers_nmi[nmi_test]].data.active_power.loc[date_of_interest]
 
 # A_pv = A_dem -  A_agg
 
 # fig, ax = plt.subplots(figsize=(12, 4))
-# A_pv.plot(ax=ax, label='train', linewidth=1)
-# # customers[nmi].data_test[input_features['Forecasted_param']].plot(ax=ax, label='test', linewidth=1)
+# A_pv.plot(ax=ax, label='pv', linewidth=1)
+# A_dem.plot(ax=ax, label='demand', linewidth=1)
+# A_agg.plot(ax=ax, label='agg', linewidth=1)
+
+
 # ax.set_title('Electricity demand')
 # ax.legend()
 # plt.show()
 
 
+#### Method 2
+# # Reactive power as an indicator 
 
