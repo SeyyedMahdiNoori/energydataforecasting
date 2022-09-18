@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 # Read data
 data = pd.read_csv('_WANNIA_8MB_MURESK-nmi-loads.csv')
 
-# ###### Pre-process the data ######
+# # ###### Pre-process the data ######
 
 # format datetime to pandas datetime format
 data['datetime'] = pd.to_datetime(data['datetime'])
@@ -24,12 +24,10 @@ data['DayofWeek'] = data['datetime'].dt.day_name()
 # Save customer nmis in a list
 customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
 
-# #######
 # *** Temporary *** the last day of the data (2022-07-31)
 # is very different from the rest, and is ommitted for now.
 filt = (data['datetime'] < '2022-07-31')
 data = data.loc[filt].copy()
-# #######
 
 # Make datetime index of the dataset
 data.set_index(['nmi', 'datetime'], inplace=True)
@@ -58,6 +56,7 @@ data_nmi = pd.read_csv('nmi.csv')
 data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
 import itertools
+nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
 data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
 data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
 data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))

@@ -15,11 +15,11 @@ from datetime import date, timedelta
 
 
 # Get data from the ReadData script
-from ReadData import data, customers_nmi, input_features,datetimes
+from ReadData import data, customers_nmi, input_features,datetimes,nmi_with_pv
 
-# Warnings configuration
-import warnings
-warnings.filterwarnings('ignore')
+# # Warnings configuration
+# import warnings
+# warnings.filterwarnings('ignore')
 
 
 # Define a class for all the nmis and load forecating functions
