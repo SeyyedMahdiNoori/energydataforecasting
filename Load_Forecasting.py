@@ -128,7 +128,7 @@ class customers_class:
         """
         Generate_interval_prediction(self,input_features)
         
-        This function outputs three sets of values (a lower bound, an upper bound and most likely valye), using a recursive multi-step probabilistic forecasting method.
+        This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
         The conficance level can be set in the function parameters as "interval = [10, 90]".
         
         input_features is a dictionary. To find an example of its format refer to the ReadData.py file
@@ -142,7 +142,16 @@ class customers_class:
 
     @staticmethod
     def Generate_disggragation():
+
+        """
+        Generate_disggragation()
         
+        This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
+        class variable. It only applies the disaggregation to the nmis that have a PV system (varibale nmi_with_pv which is imported from 
+        thr ReadData.py file). This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
+
+        """
+
         Times = range(0,len(datetimes))
         result_disaggregation = pool_executor_disaggregation(Demand_dissagregation,Times)
         Total_res = [res for res in result_disaggregation]
@@ -183,6 +192,22 @@ for customer in customers_nmi:
 
 
 def Demand_dissagregation(t):
+    
+    """
+    Demand_dissagregation(t), where t is the time-step of the disaggregation.
+    
+    This function disaggregates the demand and generation for all the nodes in the system at time-step t. It only applies the disaggregation to the nmis that have a PV system (varibale nmi_with_pv which is imported from 
+    thr ReadData.py file). 
+
+    It is uses an optimisation algorithm with constrain:
+        P_{t}^{pv} * PanleSize_{i} + P^{d}_{i,t}  == P^{agg}_{i,t} + P^{pen-p}_{i,t} - P^{pen-n}_{i,t},
+    with the objective:
+        min (P_{t}^{pv} + 10000 * \sum_{i} (P^{pen-p}_{i,t} - P^{pen-n}_{i,t}) 
+    variables P^{pen-p}_{i,t} and P^{pen-n}_{i,t}) are defined to prevenet infeasibilities the optimisation problem, and are added to the objective function
+    with a big coefficient. Variables P_{t}^{pv} and P^{d}_{i,t} denote the irridicance at time t, and demand at nmi i and time t, respectively. Also, parameters 
+    PanleSize_{i} and P^{agg}_{i,t} denote the PV panel size of nmi i, and the recorded aggregated demand at nmi i and time t, respectively.
+    """
+
     Time = range(t,t+1)
     model=ConcreteModel()
     model.pv=Var(Time, bounds=(0,1))
@@ -226,17 +251,29 @@ def pool_executor_disaggregation(function_name,Times):
 # # Method (1): Recursive multi-step point-forecasting method
 # # ==================================================================================================
 
-# Parllel programming approach
-# ====================================================================================
-
 # This function is used to parallelised the forecasting for each nmi
 def pool_executor_forecast_pointbased(function_name,customers_nmi,input_features):
+    
+    """
+    pool_executor_forecast_pointbased(function_name,customers_nmi,input_features)
+
+    This functions (along with function run_prallel_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the function name to be ran, the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    """
+
     with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
         results = executor.map(function_name,customers_nmi,repeat(input_features))  
     return results
 
 # This function outputs the forecasting for each nmi
 def run_prallel_forecast_pointbased(customers_nmi,input_features):
+
+    """
+    run_prallel_forecast_pointbased(customers_nmi,input_features)
+
+    This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    """
 
     # from Load_Forecasting import customers 
     print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = customers_nmi, second=list(customers.keys()).index(customers_nmi),third = len(customers)))
@@ -251,7 +288,17 @@ def run_prallel_forecast_pointbased(customers_nmi,input_features):
 
 # This function uses the parallelised function and save the result into a single dictionary 
 def forecast_pointbased(customers_nmi,input_features):
+    
+    """
+    forecast_pointbased(customers_nmi,input_features) 
 
+    This function generates prediction values for all the nmis using a recursive multi-step point-forecasting method. It uses function pool_executor_forecast_pointbased to generate
+    the predictions for each nmi parallely (each on a separate core). This function accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+
+    This function return the forecasted value of the desired parameter specified in the input_feature['Forecasted_param'] for the dates specified in the input_feature dictionary for 
+    all the nmis in pandas.Dataframe format.
+    """
     predictions_prallel = pool_executor_forecast_pointbased(run_prallel_forecast_pointbased,customers_nmi,input_features)
     
     # Aggregate the results from the parallelised function into a list
@@ -266,14 +313,29 @@ def forecast_pointbased(customers_nmi,input_features):
 
 # This function is used to parallelised the forecasting for each nmi
 def pool_executor_forecast_interval(function_name,customers_nmi,input_features):
+    """
+    pool_executor_forecast_interval(function_name,customers_nmi,input_features)
+
+    This functions (along with function run_prallel_Interval_Load_Forecast) are used to parallelised forecast_interval() function for each nmi. It accepts the function name to be ran, the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    """
     with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
         results = executor.map(function_name,customers_nmi,repeat(input_features))  
     return results
 
 # This function outputs the forecasting for each nmi
 def run_prallel_Interval_Load_Forecast(customers_nmi,input_features):
+
+    """
+    run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
+
+    This functions (along with function pool_executor_forecast_interval) are used to parallelised forecast_interval() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    """
+
     # from Load_Forecasting import customers 
     print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = customers_nmi, second=list(customers.keys()).index(customers_nmi),third = len(customers)))
+
 
 
     # Train a forecasting object
@@ -287,6 +349,17 @@ def run_prallel_Interval_Load_Forecast(customers_nmi,input_features):
 
 # This function uses the parallelised function and save the result into a single dictionary 
 def forecast_interval(customers_nmi,input_features):
+
+    """
+    forecast_pointbased(customers_nmi,input_features) 
+
+    This function generates prediction values for all the nmis using a recursive multi-step probabilistic forecasting method. It uses function pool_executor_forecast_interval to generate
+    the predictions for each nmi parallely (each on a separate core). This function accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+
+    This function return the forecasted values for the lower bound, upper bound and the most likely values of the desired parameter specified in the input_feature['Forecasted_param'] for the dates specified in the input_feature dictionary for 
+    all the nmis in pandas.Dataframe format.
+    """
     
     predictions_prallel = pool_executor_forecast_interval(run_prallel_Interval_Load_Forecast,customers_nmi,input_features)
 
@@ -300,7 +373,12 @@ def forecast_interval(customers_nmi,input_features):
 
 # Export interval based method into a json file
 def export_interval_result_to_json(predictions_output_interval):
-    # saving predictions to a json file
+    """
+    export_interval_result_to_json(predictions_output_interval)
+
+    This function saves the predictions generated by function forecast_interval as a json file.
+    """
+
 
     copy_predictions_output = copy(predictions_output_interval)
     for c in copy_predictions_output.keys():
@@ -309,6 +387,13 @@ def export_interval_result_to_json(predictions_output_interval):
         json.dump(copy_predictions_output,f)
 
 def read_json_interval():
+
+    """
+    read_json_interval()
+
+    This function imports the jason file generated by function export_interval_result_to_json
+    and return the saved value in pandas.Dataframe format.
+    """
 
     with open("my_json_file.json","r") as f:
         loaded_predictions_output = json.load(f)
@@ -320,6 +405,14 @@ def read_json_interval():
     return(loaded_predictions_output)
 
 def Forecast_using_disaggregation():
+
+    """
+    Forecast_using_disaggregation()
+
+    This function is used to generate forecast values. It first disagregates the demand and generation for all nmis with PV installation using function
+    Generate_disggragation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
+    and returns an aggeragated forecast for all the nmis with PV installation in pandas.Dataframe format.
+    """
     
     customers_class.Generate_disggragation()
 
