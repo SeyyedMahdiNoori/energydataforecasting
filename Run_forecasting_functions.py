@@ -32,7 +32,7 @@ def run_prallel_forecast_pointbased(customers_nmi,input_features):
     # Generate predictions 
     customers[customers_nmi].Generate_prediction(input_features)
     
-    return customers[customers_nmi].predictions.rename(columns={'pred': str(customers_nmi)}) 
+    return customers[customers_nmi].predictions.rename(columns={'pred': customers_nmi}) 
 
 # This function uses the parallelised function and save the result into a single dictionary 
 def forecast_pointbased(customers_nmi,input_features):
@@ -67,7 +67,7 @@ def run_prallel_Interval_Load_Forecast(customers_nmi,input_features):
     # Generate interval predictions 
     customers[customers_nmi].Generate_interval_prediction(input_features)
     
-    return customers[customers_nmi].interval_predictions.rename(columns={'pred': str(customers_nmi)})
+    return customers[customers_nmi].interval_predictions.rename(columns={'pred': customers_nmi})
 
 
 # This function uses the parallelised function and save the result into a single dictionary 

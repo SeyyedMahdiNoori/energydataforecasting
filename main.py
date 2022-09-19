@@ -42,9 +42,9 @@ predictions_interval = forecast_interval(customers_nmi,input_features)
 # Export the results into a json file
 export_interval_result_to_json(predictions_interval)
 
-# # To read the result from the json file run the following function
-# from Run_forecasting_functions import read_json_interval
-# loaded_predictions_output = read_json_interval()
+# To read the result from the json file run the following function
+from Run_forecasting_functions import read_json_interval
+loaded_predictions_output = read_json_interval()
 
 
 

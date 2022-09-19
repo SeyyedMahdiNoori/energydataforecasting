@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 plt.rcParams["font.family"] = "Times New Roman"
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
-from Load_Forecasting import customers, customers_nmi
+from Load_Forecasting import customers, customers_nmi, nmi_with_pv
 from ReadData import input_features
 import numpy as np
 from sklearn.metrics import mean_squared_error
@@ -11,12 +11,12 @@ from sklearn.metrics import mean_squared_error
 # Set this value to choose an nmi from customers_nmi 
 # Example
 # nmi = customers_nmi[10]
-nmi = 70011027085
+nmi = nmi_with_pv[2]
 
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4))
-customers[nmi].data_train[input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
+customers[nmi].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
 # customers[nmi].data_test[input_features['Forecasted_param']].plot(ax=ax, label='test', linewidth=1)
 ax.set_title('Electricity demand')
 ax.legend()
@@ -145,27 +145,27 @@ plt.show()
 # plt.show()   
 
 
-# Plot Interval Predition vs Real data using the Recursive multi-step probabilistic forecasting method
-# ==============================================================================
-import matplotlib.ticker as ticker
-import datetime
+# # Plot Interval Predition vs Real data using the Recursive multi-step probabilistic forecasting method
+# # ==============================================================================
+# import matplotlib.ticker as ticker
+# import datetime
 
-customers[nmi].Generate_forecaster_object(input_features)
-customers[nmi].Generate_interval_prediction(input_features)
-predictions_interval= customers[nmi].interval_predictions
+# customers[nmi].Generate_forecaster_object(input_features)
+# customers[nmi].Generate_interval_prediction(input_features)
+# predictions_interval= customers[nmi].interval_predictions
 
-fig, ax=plt.subplots(figsize=(11, 3))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
-ax.fill_between(
-    predictions_interval.index,
-    predictions_interval['lower_bound'],
-    predictions_interval['upper_bound'],
-    color = 'deepskyblue',
-    alpha = 0.3,
-    label = '80% interval'
-)
-ax.yaxis.set_major_formatter(ticker.EngFormatter())
-ax.set_ylabel('kW')
-ax.set_title('Energy demand forecast')
-ax.legend()
-plt.show()   
+# fig, ax=plt.subplots(figsize=(11, 3))
+# customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+# ax.fill_between(
+#     predictions_interval.index,
+#     predictions_interval['lower_bound'],
+#     predictions_interval['upper_bound'],
+#     color = 'deepskyblue',
+#     alpha = 0.3,
+#     label = '80% interval'
+# )
+# ax.yaxis.set_major_formatter(ticker.EngFormatter())
+# ax.set_ylabel('kW')
+# ax.set_title('Energy demand forecast')
+# ax.legend()
+# plt.show()   

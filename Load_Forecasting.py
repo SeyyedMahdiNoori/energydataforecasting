@@ -9,30 +9,48 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline # Construct a Pipeline from the given estimators (for more information: https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.make_pipeline.html)
 from sklearn.preprocessing import StandardScaler  # Standardize features by removing the mean and scaling to unit variance.
 from skforecast.ForecasterAutoreg import ForecasterAutoreg # A random forest is a meta estimator that fits a number of classifying decision trees on various sub-samples of the dataset and uses averaging to improve the predictive accuracy and control over-fitting. 
-from skforecast.model_selection import grid_search_forecaster
-from skforecast.model_selection import backtesting_forecaster
+from skforecast.model_selection import grid_search_forecaster, backtesting_forecaster
 from datetime import date, timedelta
 
+from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
+from multiprocessing import cpu_count
+import multiprocessing as mp
+
+from pyomo.environ import NonNegativeReals, ConstraintList, ConcreteModel, Var, Objective
+from pyomo.opt import SolverFactory
+
+from tqdm import tqdm
+from functools import partialmethod
+
+import json
+from copy import deepcopy as copy
 
 # Get data from the ReadData script
 from ReadData import data, customers_nmi, input_features,datetimes,nmi_with_pv
 
-# # Warnings configuration
-# import warnings
-# warnings.filterwarnings('ignore')
+# customers_nmi = nmi_with_pv[0:2]
+# nmi_with_pv = nmi_with_pv[0:2]
+
+core_usage = 1 # 1/core_usage shows core percentage usage we want to use
+
+# Warnings configuration
+import warnings
+warnings.filterwarnings('ignore')
 
 
 # Define a class for all the nmis and load forecating functions
 # ==============================================================================
 class customers_class:
 
-    Forecasted_param = input_features['Forecasted_param']    
+    # Forecasted_param = input_features['Forecasted_param']    
 
     def __init__(self, nmi,input_features):
 
         self.nmi = nmi      # store nmi in each object              
         self.data = data.loc[self.nmi]      # store data in each object 
-        self.data_train = self.data.loc[input_features['Start training']:input_features['End training']]
+        
+        # self.data_train = self.data.loc[input_features['Start training']:input_features['End training']]
 
     # This function outputs the forecasts using a Recursive multi-step point-forecasting method of each nmi individually
     def Generate_forecaster_object(self,input_features):
@@ -43,14 +61,12 @@ class customers_class:
             )
 
         # Train the forecaster using the train data
-        self.forecaster.fit(y=self.data_train[self.Forecasted_param])
+        self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
     # This function optimises the parameters of the forecaster
     def Generate_optimised_forecaster_object(self,input_features):
         
         # These lines are used to hide the bar in the optimisation process
-        from tqdm import tqdm
-        from functools import partialmethod
         tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
 
         self.forecaster = ForecasterAutoreg(
@@ -66,13 +82,13 @@ class customers_class:
         # optimise the forecaster
         grid_search_forecaster(
                         forecaster  = self.forecaster,
-                        y           = self.data_train[self.Forecasted_param],
+                        y           = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
                         param_grid  = param_grid,
                         # lags_grid   = lags_grid,
                         steps       =  48, # input_features['Window size'],
                         metric      = 'mean_absolute_error',
                         # refit       = False,
-                        initial_train_size = len(self.data_train[self.Forecasted_param]) - input_features['Window size'] * 10,
+                        initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * 10,
                         # fixed_train_size   = False,
                         return_best = True,
                         verbose     = False
@@ -82,7 +98,7 @@ class customers_class:
     def Generate_prediction(self,input_features):
         # Generate predictions using normal forecasting
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
-        self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[self.Forecasted_param].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
+        self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
 
     def Generate_interval_prediction(self,input_features):
         # Generate predictions using normal forecasting
@@ -91,7 +107,20 @@ class customers_class:
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
         
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[self.Forecasted_param].loc[input_features['Last-observed-window']]).set_index(Newindex)
+        self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
+
+    @staticmethod
+    def Generate_disggragation():
+        
+        Times = range(0,len(datetimes))
+        result_disaggregation = pool_executor_disaggregation(Demand_dissagregation,Times)
+        Total_res = [res for res in result_disaggregation]
+        
+        for i in nmi_with_pv:
+            customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
+            customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
+
+
 
     #######
     # To be added
@@ -105,14 +134,14 @@ class customers_class:
     #         )
 
     #     # Train the forecaster using the train data
-    #     self.forecaster.fit(y=self.data_train[self.Forecasted_param],
-    #                         exog = self.data_train.reactive_power) 
+    #     self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+    #                         exog = self.data.loc[input_features['Start training']:input_features['End training']].reactive_power) 
 
     # def Generate_predictio_with_exogenous(self,input_features):
     #     # Generate predictions using normal forecasting
     #     Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
     #     self.predictions = self.forecaster.predict(steps = input_features['Windows to be forecasted'] * input_features['Window size'], 
-    #                                                last_window = self.data[self.Forecasted_param].loc[input_features['Last-observed-window']],
+    #                                                last_window = self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']],
     #                                                exog = self.data.reactive_power.loc[input_features['Last-observed-window']]
     #                                                 ).to_frame().set_index(Newindex)
 
@@ -124,37 +153,160 @@ for customer in customers_nmi:
     customers[customer] = customers_class(customer,input_features)
 
 
+def Demand_dissagregation(t):
+    Time = range(t,t+1)
+    model=ConcreteModel()
+    model.pv=Var(Time, bounds=(0,1))
+    model.demand=Var(Time,nmi_with_pv,within=NonNegativeReals)
+    model.penalty_p=Var(Time,nmi_with_pv,within=NonNegativeReals)
+    model.penalty_n=Var(Time,nmi_with_pv,within=NonNegativeReals)
 
-# ==============================================================================
-# Methods for disagregation
-# ==============================================================================
+    # # Constraints
+    model.Const=ConstraintList()
 
-# #### Method 1
-# # # Reactive power as an indicator 
+    for t in Time:
+        for i in nmi_with_pv:
+            model.Const.add(model.demand[t,i] - model.pv[t] * customers[i].data.pv_system_size[datetimes[0]] == customers[i].data.active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i]   )
 
-# import math
-# import matplotlib.pyplot as plt
-# PF = 0.95
-# date_of_interest = '2022-07-28'
-# nmi_test = 5
+    # # Objective
+    def Objrule(model):
+        return sum(model.pv[t] for t in Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in nmi_with_pv ) for t in Time)
+    model.obj=Objective(rule=Objrule)
 
-# A_reac = customers[customers_nmi[nmi_test]].data.reactive_power.loc[date_of_interest]
-# A_dem = A_reac * PF/math.sqrt(1-PF**2)
-# A_agg = customers[customers_nmi[nmi_test]].data.active_power.loc[date_of_interest]
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+    
 
-# A_pv = A_dem -  A_agg
+    print(" Disaggregating {first}-th time steps".format(first = t))
+    # print(t)
 
-# fig, ax = plt.subplots(figsize=(12, 4))
-# A_pv.plot(ax=ax, label='pv', linewidth=1)
-# A_dem.plot(ax=ax, label='demand', linewidth=1)
-# A_agg.plot(ax=ax, label='agg', linewidth=1)
-
-
-# ax.set_title('Electricity demand')
-# ax.legend()
-# plt.show()
+    return ({i:    - (model.pv[t].value * customers[i].data.pv_system_size[0] + model.penalty_p[t,i].value)  for i in nmi_with_pv},
+            {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in nmi_with_pv} )
 
 
-#### Method 2
-# # Reactive power as an indicator 
+# This function is used to parallelised the forecasting for each nmi
+def pool_executor_disaggregation(function_name,Times):
+    with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
+        results = executor.map(function_name,Times)  
+    return results
+
+
+
+# # ==================================================================================================
+# # Method (1): Recursive multi-step point-forecasting method
+# # ==================================================================================================
+
+# Parllel programming approach
+# ====================================================================================
+
+# This function is used to parallelised the forecasting for each nmi
+def pool_executor_forecast_pointbased(function_name,customers_nmi,input_features):
+    with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
+        results = executor.map(function_name,customers_nmi,repeat(input_features))  
+    return results
+
+# This function outputs the forecasting for each nmi
+def run_prallel_forecast_pointbased(customers_nmi,input_features):
+
+    # from Load_Forecasting import customers 
+    print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = customers_nmi, second=list(customers.keys()).index(customers_nmi),third = len(customers)))
+
+    # Train a forecasting object
+    customers[customers_nmi].Generate_forecaster_object(input_features)
+    
+    # Generate predictions 
+    customers[customers_nmi].Generate_prediction(input_features)
+    
+    return customers[customers_nmi].predictions.rename(columns={'pred': customers_nmi}) 
+
+# This function uses the parallelised function and save the result into a single dictionary 
+def forecast_pointbased(customers_nmi,input_features):
+
+    predictions_prallel = pool_executor_forecast_pointbased(run_prallel_forecast_pointbased,customers_nmi,input_features)
+    
+    # Aggregate the results from the parallelised function into a list
+    predictions_output = [res for res in predictions_prallel]
+    predictions_output = pd.concat(predictions_output, axis=1)
+
+    return predictions_output
+
+# # ==================================================================================================
+# # Method (2): Recursive multi-step probabilistic forecasting method
+# # ==================================================================================================
+
+# This function is used to parallelised the forecasting for each nmi
+def pool_executor_forecast_interval(function_name,customers_nmi,input_features):
+    with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
+        results = executor.map(function_name,customers_nmi,repeat(input_features))  
+    return results
+
+# This function outputs the forecasting for each nmi
+def run_prallel_Interval_Load_Forecast(customers_nmi,input_features):
+    # from Load_Forecasting import customers 
+    print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = customers_nmi, second=list(customers.keys()).index(customers_nmi),third = len(customers)))
+
+
+    # Train a forecasting object
+    customers[customers_nmi].Generate_forecaster_object(input_features)
+    
+    # Generate interval predictions 
+    customers[customers_nmi].Generate_interval_prediction(input_features)
+    
+    return customers[customers_nmi].interval_predictions.rename(columns={'pred': customers_nmi})
+
+
+# This function uses the parallelised function and save the result into a single dictionary 
+def forecast_interval(customers_nmi,input_features):
+    
+    predictions_prallel = pool_executor_forecast_interval(run_prallel_Interval_Load_Forecast,customers_nmi,input_features)
+
+    # Aggregate the results from the parallelised function into a dictionary
+    predictions_output_interval = {}
+    for res in predictions_prallel:
+        predictions_output_interval[int(res.columns[0])] = res.rename(columns={res.columns[0]: 'pred'})
+    
+    return predictions_output_interval
+
+
+# Export interval based method into a json file
+def export_interval_result_to_json(predictions_output_interval):
+    # saving predictions to a json file
+
+    copy_predictions_output = copy(predictions_output_interval)
+    for c in copy_predictions_output.keys():
+        copy_predictions_output[c] = json.loads(copy_predictions_output[c].to_json())
+    with open("my_json_file.json","w") as f:
+        json.dump(copy_predictions_output,f)
+
+def read_json_interval():
+
+    with open("my_json_file.json","r") as f:
+        loaded_predictions_output = json.load(f)
+
+    for l in list(loaded_predictions_output.keys()):
+        loaded_predictions_output[int(l)] = pd.read_json(json.dumps(loaded_predictions_output[l]))
+        del loaded_predictions_output[l]
+    
+    return(loaded_predictions_output)
+
+def Forecast_using_disaggregation():
+    
+    customers_class.Generate_disggragation()
+
+    input_features['Forecasted_param']= 'pv_disagg'
+    predictions_output_pv = forecast_pointbased(nmi_with_pv,input_features)
+
+    input_features['Forecasted_param']= 'demand_disagg'
+    predictions_output_demand = forecast_pointbased(nmi_with_pv,input_features)
+
+    predictions_agg = predictions_output_demand - predictions_output_pv
+
+    return(predictions_agg)
+
+
+
+
+
+
 
