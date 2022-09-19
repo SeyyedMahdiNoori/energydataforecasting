@@ -61,8 +61,8 @@ data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv'
 data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
 data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
 
-# This is line is added to prevent the aggregated demand from being negative when there is not PV
-# Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
-for i in customers_nmi:
-    if data.loc[i].pv_system_size[0] == 0:
-        data.at[i,'active_power'] = data.loc[i].active_power.abs()
+# # This is line is added to prevent the aggregated demand from being negative when there is not PV
+# # Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
+# # for i in customers_nmi:
+# #     if data.loc[i].pv_system_size[0] == 0:
+# #         data.at[i,'active_power'] = data.loc[i].active_power.abs()

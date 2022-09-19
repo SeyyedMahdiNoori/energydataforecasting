@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 # Modelling and Forecasting
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge # Linear least squares with l2 regularization. (https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html)
 from sklearn.pipeline import make_pipeline # Construct a Pipeline from the given estimators (for more information: https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.make_pipeline.html)
 from sklearn.preprocessing import StandardScaler  # Standardize features by removing the mean and scaling to unit variance.
 from skforecast.ForecasterAutoreg import ForecasterAutoreg # A random forest is a meta estimator that fits a number of classifying decision trees on various sub-samples of the dataset and uses averaging to improve the predictive accuracy and control over-fitting. 
@@ -42,18 +42,26 @@ warnings.filterwarnings('ignore')
 # Define a class for all the nmis and load forecating functions
 # ==============================================================================
 class customers_class:
-
-    # Forecasted_param = input_features['Forecasted_param']    
+  
 
     def __init__(self, nmi,input_features):
 
         self.nmi = nmi      # store nmi in each object              
-        self.data = data.loc[self.nmi]      # store data in each object 
-        
+        self.data = data.loc[self.nmi]      # store data in each object         
         # self.data_train = self.data.loc[input_features['Start training']:input_features['End training']]
 
-    # This function outputs the forecasts using a Recursive multi-step point-forecasting method of each nmi individually
     def Generate_forecaster_object(self,input_features):
+        
+        """
+        Generate_forecaster_object(self,input_features)
+        
+        This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+        have different objective can be used with the same parameters.
+        
+        input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+        """
+
         # Create a forecasting object
         self.forecaster = ForecasterAutoreg(
                 regressor = make_pipeline(StandardScaler(), Ridge()),  
@@ -63,9 +71,18 @@ class customers_class:
         # Train the forecaster using the train data
         self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
-    # This function optimises the parameters of the forecaster
     def Generate_optimised_forecaster_object(self,input_features):
         
+        """
+        Generate_optimised_forecaster_object(self,input_features)
+        
+        This function generates a forecaster object to be used for a recursive multi-step forecasting method.  
+        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+        have different objective can be used with the same parameters.
+
+        input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+        """
+
         # These lines are used to hide the bar in the optimisation process
         tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
 
@@ -96,12 +113,26 @@ class customers_class:
         
 
     def Generate_prediction(self,input_features):
-        # Generate predictions using normal forecasting
+        """
+        Generate_prediction(self,input_features)
+        
+        This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
+        
+        input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+        """
+        
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
         self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
 
     def Generate_interval_prediction(self,input_features):
-        # Generate predictions using normal forecasting
+        """
+        Generate_interval_prediction(self,input_features)
+        
+        This function outputs three sets of values (a lower bound, an upper bound and most likely valye), using a recursive multi-step probabilistic forecasting method.
+        The conficance level can be set in the function parameters as "interval = [10, 90]".
+        
+        input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+        """
 
         # Create a time-index for the dates that are being predicted
         Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
@@ -119,8 +150,6 @@ class customers_class:
         for i in nmi_with_pv:
             customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
             customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
-
-
 
     #######
     # To be added
@@ -178,7 +207,7 @@ def Demand_dissagregation(t):
     opt.solve(model)
     
 
-    print(" Disaggregating {first}-th time steps".format(first = t))
+    print(" Disaggregating {first}-th time step".format(first = t))
     # print(t)
 
     return ({i:    - (model.pv[t].value * customers[i].data.pv_system_size[0] + model.penalty_p[t,i].value)  for i in nmi_with_pv},
@@ -294,13 +323,14 @@ def Forecast_using_disaggregation():
     
     customers_class.Generate_disggragation()
 
-    input_features['Forecasted_param']= 'pv_disagg'
-    predictions_output_pv = forecast_pointbased(nmi_with_pv,input_features)
+    input_features_copy = copy(input_features)
+    input_features_copy['Forecasted_param']= 'pv_disagg'
+    predictions_output_pv = forecast_pointbased(nmi_with_pv,input_features_copy)
 
-    input_features['Forecasted_param']= 'demand_disagg'
-    predictions_output_demand = forecast_pointbased(nmi_with_pv,input_features)
+    input_features_copy['Forecasted_param']= 'demand_disagg'
+    predictions_output_demand = forecast_pointbased(nmi_with_pv,input_features_copy)
 
-    predictions_agg = predictions_output_demand - predictions_output_pv
+    predictions_agg = predictions_output_demand + predictions_output_pv
 
     return(predictions_agg)
 

@@ -9,7 +9,7 @@
 # ==================================================================================================
 
 # Initialize variables
-from Load_Forecasting import customers_nmi
+from Load_Forecasting import customers_nmi, input_features, forecast_pointbased, forecast_interval, export_interval_result_to_json
 # customers_nmi = customers_nmi[0:8]  # Use this line for testing (the number of nmi in the _WANNIA_8MB_MURESK-nmi-loads.csv is 1292. This line takes the first 8 and produces the results)
 from ReadData import input_features # To set the data feature like start and end date for training go to the ReadData file
 
@@ -19,7 +19,7 @@ from ReadData import input_features # To set the data feature like start and end
 # ==================================================================================================
 
 # import forecasting functions
-from Run_forecasting_functions import forecast_pointbased
+# from Run_forecasting_functions import forecast_pointbased
 
 # Generate forecasting values
 predictions_output = forecast_pointbased(customers_nmi,input_features)
@@ -34,17 +34,17 @@ predictions_output.to_csv('predictions.csv')
 # ==================================================================================================
 
 # import forecasting functions
-from Run_forecasting_functions import forecast_interval, export_interval_result_to_json
+# from Run_forecasting_functions import forecast_interval, export_interval_result_to_json
 
 # Run the parralel function
-predictions_interval = forecast_interval(customers_nmi,input_features)
+# predictions_interval = forecast_interval(customers_nmi,input_features)
 
-# Export the results into a json file
-export_interval_result_to_json(predictions_interval)
+# # Export the results into a json file
+# export_interval_result_to_json(predictions_interval)
 
-# To read the result from the json file run the following function
-from Run_forecasting_functions import read_json_interval
-loaded_predictions_output = read_json_interval()
+# # To read the result from the json file run the following function
+# from Run_forecasting_functions import read_json_interval
+# loaded_predictions_output = read_json_interval()
 
 
 
