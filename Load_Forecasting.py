@@ -1,6 +1,7 @@
 # Libraries
 # ==============================================================================
 # General
+import imp
 import pandas as pd
 import numpy as np
 
@@ -141,15 +142,30 @@ class customers_class:
         self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
 
     @staticmethod
-    def Generate_disggragation():
+    def Generate_disggragation_regression():
+        pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in nmi_with_pv]).reshape((-1,1)),
+                               np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in nmi_with_pv])     
+                              ).coef_[0]   for t in range(0,len(datetimes))]
+
+        for i in nmi_with_pv:
+            customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] for t in range(0,len(datetimes))]
+            customers[i].data['demand_disagg'] = [customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]] for t in range(0,len(datetimes))] 
+        for i in nmi_with_pv:
+            customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+            customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+
+        for i in list(set(customers_nmi) - set(nmi_with_pv)):
+            customers[i].data['pv_disagg'] = 0
+            customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+
+    @staticmethod
+    def Generate_disggragation_optimisation():
 
         """
-        Generate_disggragation()
+        Generate_disggragation_optimisation()
         
         This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
-        class variable. It only applies the disaggregation to the nmis that have a PV system (varibale nmi_with_pv which is imported from 
-        thr ReadData.py file). This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
-
+        class variable. It only applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
         """
 
         Times = range(0,len(datetimes))
@@ -159,6 +175,10 @@ class customers_class:
         for i in nmi_with_pv:
             customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
             customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
+
+        for i in list(set(customers_nmi) - set(nmi_with_pv)):
+            customers[i].data['pv_disagg'] = 0
+            customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
 
     #######
     # To be added
@@ -196,8 +216,7 @@ def Demand_dissagregation(t):
     """
     Demand_dissagregation(t), where t is the time-step of the disaggregation.
     
-    This function disaggregates the demand and generation for all the nodes in the system at time-step t. It only applies the disaggregation to the nmis that have a PV system (varibale nmi_with_pv which is imported from 
-    thr ReadData.py file). 
+    This function disaggregates the demand and generation for all the nodes in the system at time-step t. 
 
     It is uses an optimisation algorithm with constrain:
         P_{t}^{pv} * PanleSize_{i} + P^{d}_{i,t}  == P^{agg}_{i,t} + P^{pen-p}_{i,t} - P^{pen-n}_{i,t},
@@ -410,18 +429,18 @@ def Forecast_using_disaggregation():
     Forecast_using_disaggregation()
 
     This function is used to generate forecast values. It first disagregates the demand and generation for all nmis with PV installation using function
-    Generate_disggragation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
-    and returns an aggeragated forecast for all the nmis with PV installation in pandas.Dataframe format.
+    Generate_disggragation_optimisation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
+    and returns an aggeragated forecast for all nmis in pandas.Dataframe format.
     """
     
-    customers_class.Generate_disggragation()
+    customers_class.Generate_disggragation_optimisation()
 
     input_features_copy = copy(input_features)
     input_features_copy['Forecasted_param']= 'pv_disagg'
-    predictions_output_pv = forecast_pointbased(nmi_with_pv,input_features_copy)
+    predictions_output_pv = forecast_pointbased(customers_nmi,input_features_copy)
 
     input_features_copy['Forecasted_param']= 'demand_disagg'
-    predictions_output_demand = forecast_pointbased(nmi_with_pv,input_features_copy)
+    predictions_output_demand = forecast_pointbased(customers_nmi,input_features_copy)
 
     predictions_agg = predictions_output_demand + predictions_output_pv
 
@@ -431,5 +450,16 @@ def Forecast_using_disaggregation():
 
 
 
+# import matplotlib.pyplot as plt
+# customers_class.Generate_disggragation_optimisation()
+# customers2 = copy(customers)
+# customers_class.Generate_disggragation_regression()
 
+# nmi = nmi_with_pv[5]
 
+# fig, ax = plt.subplots(figsize=(12, 3.5))
+# customers[nmi].data.active_power[48*5:48*6].plot(linewidth=2, label='main', ax=ax)
+# customers2[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv optimisation', ax=ax)
+# customers[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv regression', ax=ax)
+# ax.legend()
+# plt.show()   

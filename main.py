@@ -18,9 +18,6 @@ from ReadData import input_features # To set the data feature like start and end
 # Method (1): Recursive multi-step point-forecasting method
 # ==================================================================================================
 
-# import forecasting functions
-# from Run_forecasting_functions import forecast_pointbased
-
 # Generate forecasting values
 predictions_output = forecast_pointbased(customers_nmi,input_features)
 
@@ -32,9 +29,6 @@ predictions_output.to_csv('predictions.csv')
 # ==================================================================================================
 # Method (2): Recursive multi-step probabilistic forecasting method
 # ==================================================================================================
-
-# import forecasting functions
-# from Run_forecasting_functions import forecast_interval, export_interval_result_to_json
 
 # Run the parralel function
 # predictions_interval = forecast_interval(customers_nmi,input_features)

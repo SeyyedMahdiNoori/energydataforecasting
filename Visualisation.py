@@ -170,7 +170,7 @@ plt.show()
 
 # Plot Predition vs Real data using point-based approach
 # ==============================================================================
-customers_class.Generate_disggragation()
+customers_class.Generate_disggragation_regression()
 
 customers[nmi].Generate_forecaster_object(input_features)
 customers[nmi].Generate_prediction(input_features)
