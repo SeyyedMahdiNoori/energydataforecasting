@@ -450,16 +450,16 @@ def Forecast_using_disaggregation():
 
 
 
-# import matplotlib.pyplot as plt
-# customers_class.Generate_disggragation_optimisation()
-# customers2 = copy(customers)
-# customers_class.Generate_disggragation_regression()
+import matplotlib.pyplot as plt
+customers_class.Generate_disggragation_optimisation()
+customers2 = copy(customers)
+customers_class.Generate_disggragation_regression()
 
-# nmi = nmi_with_pv[5]
+nmi = nmi_with_pv[5]
 
-# fig, ax = plt.subplots(figsize=(12, 3.5))
-# customers[nmi].data.active_power[48*5:48*6].plot(linewidth=2, label='main', ax=ax)
-# customers2[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv optimisation', ax=ax)
-# customers[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv regression', ax=ax)
-# ax.legend()
-# plt.show()   
+fig, ax = plt.subplots(figsize=(12, 3.5))
+customers[nmi].data.active_power[48*5:48*6].plot(linewidth=2, label='main', ax=ax)
+customers2[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv optimisation', ax=ax)
+customers[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv regression', ax=ax)
+ax.legend()
+plt.show()   
