@@ -28,12 +28,12 @@ import json
 from copy import deepcopy as copy
 
 # Get data from the ReadData script
-from ReadData import data, customers_nmi, input_features,datetimes,nmi_with_pv
+from ReadData import data, customers_nmi, input_features, datetimes, customers_nmi_with_pv, core_usage
 
-# customers_nmi = nmi_with_pv[0:2]
-# nmi_with_pv = nmi_with_pv[0:2]
+# customers_nmi = customers_nmi_with_pv[0:2]
+# customers_nmi_with_pv = customers_nmi_with_pv[0:2]
 
-core_usage = 1 # 1/core_usage shows core percentage usage we want to use
+
 
 # Warnings configuration
 import warnings
@@ -77,14 +77,15 @@ class customers_class:
         """
         Generate_optimised_forecaster_object(self,input_features)
         
-        This function generates a forecaster object to be used for a recursive multi-step forecasting method.  
-        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-        have different objective can be used with the same parameters.
+        This function generates a forecaster object for each \textit{nmi} to be used for a recursive multi-step forecasting method.
+        It builds on function Generate\_forecaster\_object by combining grid search strategy with backtesting to identify the combination of lags 
+        and hyperparameters that achieve the best prediction performance. As default, it is based on a linear least squares with \textit{l2} regularisation method. 
+        Alternatively, it can use LinearRegression() and Lasso() methods to generate the forecaster object.
 
         input_features is a dictionary. To find an example of its format refer to the ReadData.py file
         """
 
-        # These lines are used to hide the bar in the optimisation process
+        # This line is used to hide the bar in the optimisation process
         tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
 
         self.forecaster = ForecasterAutoreg(
@@ -130,7 +131,7 @@ class customers_class:
         Generate_interval_prediction(self,input_features)
         
         This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
-        The conficance level can be set in the function parameters as "interval = [10, 90]".
+        The confidence level can be set in the function parameters as "interval = [10, 90]".
         
         input_features is a dictionary. To find an example of its format refer to the ReadData.py file
         """
@@ -142,41 +143,47 @@ class customers_class:
         self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
 
     @staticmethod
-    def Generate_disggragation_regression():
-        pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in nmi_with_pv]).reshape((-1,1)),
-                               np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in nmi_with_pv])     
+    def Generate_disaggregation_regression():
+
+        """
+        Generate_disaggregation_regression()
+        
+        This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
+        Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
+        is summation all electricity usage and generation that happens behind the meter. 
+        """
+
+        pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
+                               np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
                               ).coef_[0]   for t in range(0,len(datetimes))]
 
-        for i in nmi_with_pv:
-            customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] for t in range(0,len(datetimes))]
-            customers[i].data['demand_disagg'] = [customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]] for t in range(0,len(datetimes))] 
-        for i in nmi_with_pv:
+        for i in customers_nmi_with_pv:
             customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
             customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
 
-        for i in list(set(customers_nmi) - set(nmi_with_pv)):
+        for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
             customers[i].data['pv_disagg'] = 0
             customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
 
     @staticmethod
-    def Generate_disggragation_optimisation():
+    def Generate_disaggregation_optimisation():
 
         """
-        Generate_disggragation_optimisation()
+        Generate_disaggregation_optimisation()
         
         This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
-        class variable. It only applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
+        class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
         """
 
         Times = range(0,len(datetimes))
-        result_disaggregation = pool_executor_disaggregation(Demand_dissagregation,Times)
+        result_disaggregation = pool_executor_disaggregation(Demand_disaggregation,Times)
         Total_res = [res for res in result_disaggregation]
         
-        for i in nmi_with_pv:
+        for i in customers_nmi_with_pv:
             customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
             customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
 
-        for i in list(set(customers_nmi) - set(nmi_with_pv)):
+        for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
             customers[i].data['pv_disagg'] = 0
             customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
 
@@ -211,10 +218,10 @@ for customer in customers_nmi:
     customers[customer] = customers_class(customer,input_features)
 
 
-def Demand_dissagregation(t):
+def Demand_disaggregation(t):
     
     """
-    Demand_dissagregation(t), where t is the time-step of the disaggregation.
+    Demand_disaggregation(t), where t is the time-step of the disaggregation.
     
     This function disaggregates the demand and generation for all the nodes in the system at time-step t. 
 
@@ -223,27 +230,27 @@ def Demand_dissagregation(t):
     with the objective:
         min (P_{t}^{pv} + 10000 * \sum_{i} (P^{pen-p}_{i,t} - P^{pen-n}_{i,t}) 
     variables P^{pen-p}_{i,t} and P^{pen-n}_{i,t}) are defined to prevenet infeasibilities the optimisation problem, and are added to the objective function
-    with a big coefficient. Variables P_{t}^{pv} and P^{d}_{i,t} denote the irridicance at time t, and demand at nmi i and time t, respectively. Also, parameters 
+    with a big coefficient. Variables P_{t}^{pv} and P^{d}_{i,t} denote the irradiance at time t, and demand at nmi i and time t, respectively. Also, parameters 
     PanleSize_{i} and P^{agg}_{i,t} denote the PV panel size of nmi i, and the recorded aggregated demand at nmi i and time t, respectively.
     """
 
     Time = range(t,t+1)
     model=ConcreteModel()
     model.pv=Var(Time, bounds=(0,1))
-    model.demand=Var(Time,nmi_with_pv,within=NonNegativeReals)
-    model.penalty_p=Var(Time,nmi_with_pv,within=NonNegativeReals)
-    model.penalty_n=Var(Time,nmi_with_pv,within=NonNegativeReals)
+    model.demand=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
+    model.penalty_p=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
+    model.penalty_n=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
 
     # # Constraints
     model.Const=ConstraintList()
 
     for t in Time:
-        for i in nmi_with_pv:
+        for i in customers_nmi_with_pv:
             model.Const.add(model.demand[t,i] - model.pv[t] * customers[i].data.pv_system_size[datetimes[0]] == customers[i].data.active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i]   )
 
     # # Objective
     def Objrule(model):
-        return sum(model.pv[t] for t in Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in nmi_with_pv ) for t in Time)
+        return sum(model.pv[t] for t in Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in customers_nmi_with_pv ) for t in Time)
     model.obj=Objective(rule=Objrule)
 
     # # Solve the model
@@ -254,8 +261,8 @@ def Demand_dissagregation(t):
     print(" Disaggregating {first}-th time step".format(first = t))
     # print(t)
 
-    return ({i:    - (model.pv[t].value * customers[i].data.pv_system_size[0] + model.penalty_p[t,i].value)  for i in nmi_with_pv},
-            {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in nmi_with_pv} )
+    return ({i:    - (model.pv[t].value * customers[i].data.pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
+            {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in customers_nmi_with_pv} )
 
 
 # This function is used to parallelised the forecasting for each nmi
@@ -402,19 +409,18 @@ def export_interval_result_to_json(predictions_output_interval):
     copy_predictions_output = copy(predictions_output_interval)
     for c in copy_predictions_output.keys():
         copy_predictions_output[c] = json.loads(copy_predictions_output[c].to_json())
-    with open("my_json_file.json","w") as f:
+    with open("prediction_interval_based.json","w") as f:
         json.dump(copy_predictions_output,f)
 
-def read_json_interval():
+def read_json_interval(filename):
 
     """
-    read_json_interval()
+    read_json_interval(filename)
 
-    This function imports the jason file generated by function export_interval_result_to_json
+    This function imports the json file generated by function export_interval_result_to_json
     and return the saved value in pandas.Dataframe format.
     """
-
-    with open("my_json_file.json","r") as f:
+    with open(filename,"r") as f:
         loaded_predictions_output = json.load(f)
 
     for l in list(loaded_predictions_output.keys()):
@@ -423,17 +429,17 @@ def read_json_interval():
     
     return(loaded_predictions_output)
 
-def Forecast_using_disaggregation():
+def Forecast_using_disaggregation(customers_nmi,input_features):
 
     """
-    Forecast_using_disaggregation()
+    Forecast_using_disaggregation(customers_nmi,input_features)
 
-    This function is used to generate forecast values. It first disagregates the demand and generation for all nmis with PV installation using function
-    Generate_disggragation_optimisation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
-    and returns an aggeragated forecast for all nmis in pandas.Dataframe format.
+    This function is used to generate forecast values. It first disaggregates the demand and generation for all nmi using function
+    Generate_disaggregation_optimisation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
+    and returns an aggregated forecast for all nmis in pandas.Dataframe format.
     """
     
-    customers_class.Generate_disggragation_optimisation()
+    customers_class.Generate_disaggregation_optimisation()
 
     input_features_copy = copy(input_features)
     input_features_copy['Forecasted_param']= 'pv_disagg'
@@ -450,16 +456,16 @@ def Forecast_using_disaggregation():
 
 
 
-import matplotlib.pyplot as plt
-customers_class.Generate_disggragation_optimisation()
-customers2 = copy(customers)
-customers_class.Generate_disggragation_regression()
+# import matplotlib.pyplot as plt
+# customers_class.Generate_disaggregation_optimisation()
+# customers2 = copy(customers)
+# customers_class.Generate_disaggregation_regression()
 
-nmi = nmi_with_pv[5]
+# nmi = customers_nmi_with_pv[5]
 
-fig, ax = plt.subplots(figsize=(12, 3.5))
-customers[nmi].data.active_power[48*5:48*6].plot(linewidth=2, label='main', ax=ax)
-customers2[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv optimisation', ax=ax)
-customers[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv regression', ax=ax)
-ax.legend()
-plt.show()   
+# fig, ax = plt.subplots(figsize=(12, 3.5))
+# customers[nmi].data.active_power[48*5:48*6].plot(linewidth=2, label='main', ax=ax)
+# customers2[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv optimisation', ax=ax)
+# customers[nmi].data.pv_disagg[48*5:48*6].plot(linewidth=2, label='pv regression', ax=ax)
+# ax.legend()
+# plt.show()   

@@ -39,9 +39,10 @@ datetimes = data.index.unique('datetime')
 # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
 
+core_usage = 1 # 1/core_usage shows core percentage usage we want to use
 
 # Set features of the predections
-input_features = { 'Forecasted_param': 'active_power',   # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+input_features = { 'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
                     'Start training': '2022-07-01',
                     'End training': '2022-07-27',
                     'Last-observed-window': '2022-07-27',
@@ -56,7 +57,7 @@ data_nmi = pd.read_csv('nmi.csv')
 data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
 import itertools
-nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
+customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
 data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
 data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
 data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))

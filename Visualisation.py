@@ -2,9 +2,10 @@ import imp
 import matplotlib.pyplot as plt
 import copy
 plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["font.size"] = "16"
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
-from Load_Forecasting import customers, customers_nmi, nmi_with_pv, customers_class, Forecast_using_disaggregation
+from Load_Forecasting import customers, customers_nmi, customers_nmi_with_pv, customers_class, Forecast_using_disaggregation
 from ReadData import input_features
 import numpy as np
 from sklearn.metrics import mean_squared_error
@@ -12,15 +13,19 @@ from sklearn.metrics import mean_squared_error
 # Set this value to choose an nmi from customers_nmi 
 # Examples
 # nmi = customers_nmi[10]
-nmi = nmi_with_pv[1]
+nmi = customers_nmi_with_pv[1]
 
 # Time series plot
 # ==============================================================================
-fig, ax = plt.subplots(figsize=(12, 4))
+fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
-ax.set_title('Electricity demand')
-ax.legend()
+plt.xlabel("Date")
+plt.ylabel("Active Power (Watt)")
+# ax.legend()
+# ax.set_title('Behind the meter measurement')
+plt.savefig('Active_power_data.eps', format='eps')
 plt.show()
+
 
 
 # # Zooming time series chart
@@ -50,24 +55,33 @@ plt.show()
 
 # # Boxplot for weekly seasonality
 # # ==============================================================================
-# fig, ax = plt.subplots(figsize=(7, 3.5))
+# fig, ax = plt.subplots(figsize=(9, 4))
 # customers[nmi].data['week_day'] = customers[nmi].data.index.day_of_week + 1
 # customers[nmi].data.boxplot(column='active_power', by='week_day', ax=ax)
 # customers[nmi].data.groupby('week_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
 # ax.set_ylabel('Demand')
 # ax.set_title('Demand distribution by week day')
-# fig.suptitle('');
+# ax.set_title('')
+# plt.xlabel("Day of Week")
+# # fig.suptitle('')
+# plt.ylabel("Active Power (Watt)")
+# # plt.savefig('Seasonality_Week.eps', format='eps')
 # plt.show()
 
 # # Boxplot for daily seasonality
 # # ==============================================================================
-# fig, ax = plt.subplots(figsize=(9, 3.5))
+# fig, ax = plt.subplots(figsize=(9, 4))
 # customers[nmi].data['hour_day'] = customers[nmi].data.index.hour + 1
 # customers[nmi].data.boxplot(column='active_power', by='hour_day', ax=ax)
 # customers[nmi].data.groupby('hour_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
 # ax.set_ylabel('Demand')
+# plt.xlabel("Hour of day")
+# plt.ylabel("Active Power (Watt)")
+# ax.set_title('')
 # ax.set_title('Demand distribution by the time of the day')
-# fig.suptitle('')
+# # fig.suptitle('')
+# # plt.savefig('Seasonality_Day.eps', format='eps')
+# plt.show()
 
 
 # # #### Not done yet
@@ -94,8 +108,12 @@ plt.show()
 
 # # Partial autocorrelation plot
 # # ==============================================================================
-# fig, ax = plt.subplots(figsize=(7, 3))
-# plot_pacf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
+# fig, ax = plt.subplots(figsize=(9, 4.5))
+# plot_pacf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=48*2)
+# plt.xlabel("Lages")
+# plt.ylabel("PACF")
+# # ax.set_title('')
+# # plt.savefig('Partial_autocorrelation.eps', format='eps')
 # plt.show()
 
 
@@ -106,11 +124,14 @@ plt.show()
 # customers[nmi].Generate_forecaster_object(input_features)
 # customers[nmi].Generate_prediction(input_features)
 # predictions= customers[nmi].predictions
-# fig, ax = plt.subplots(figsize=(12, 3.5))
+# fig, ax = plt.subplots(figsize=(12, 4.5))
 # customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 # predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
 # ax.set_title('Prediction vs real demand')
 # ax.legend()
+# plt.xlabel("Time")
+# plt.ylabel("Active Power (Watt)")
+# # plt.savefig('Real_vs_pred.eps', format='eps')
 # plt.show()   
 
 
@@ -151,7 +172,7 @@ plt.show()
 # customers[nmi].Generate_interval_prediction(input_features)
 # predictions_interval= customers[nmi].interval_predictions
 
-# fig, ax=plt.subplots(figsize=(11, 3))
+# fig, ax=plt.subplots(figsize=(11, 4.5))
 # customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 # ax.fill_between(
 #     predictions_interval.index,
@@ -161,16 +182,19 @@ plt.show()
 #     alpha = 0.3,
 #     label = '80% interval'
 # )
+
 # ax.yaxis.set_major_formatter(ticker.EngFormatter())
-# ax.set_ylabel('kW')
+# plt.xlabel("Time")
+# plt.ylabel("Active Power (Watt)")
 # ax.set_title('Energy demand forecast')
 # ax.legend()
+# # plt.savefig('Real_vs_pred_interval.eps', format='eps')
 # plt.show()   
 
 
 # Plot Predition vs Real data using point-based approach
 # ==============================================================================
-customers_class.Generate_disggragation_regression()
+customers_class.Generate_disaggregation_regression()
 
 customers[nmi].Generate_forecaster_object(input_features)
 customers[nmi].Generate_prediction(input_features)
@@ -189,10 +213,13 @@ predictions_demand = customers[nmi].predictions
 
 predictions_agg = predictions_demand + predictions_pv
 
-fig, ax = plt.subplots(figsize=(12, 3.5))
+fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='pred direct', ax=ax)
 predictions_agg.pred.plot(linewidth=2, label='pred disagg', ax=ax)
-ax.set_title('Predictions vs real demand')
+# ax.set_title('Predictions vs real demand')
 ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (Watt)")
+plt.savefig('Real_vs_pred_diss.eps', format='eps')
 plt.show()   
