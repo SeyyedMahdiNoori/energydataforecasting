@@ -28,7 +28,7 @@ import json
 from copy import deepcopy as copy
 
 # Get data from the ReadData script
-from ReadData import data, customers_nmi, input_features, datetimes, customers_nmi_with_pv, core_usage
+from ReadData_NextGen import data, customers_nmi, input_features, datetimes, customers_nmi_with_pv, core_usage
 
 # customers_nmi = customers_nmi_with_pv[0:2]
 # customers_nmi_with_pv = customers_nmi_with_pv[0:2]
@@ -123,7 +123,7 @@ class customers_class:
         input_features is a dictionary. To find an example of its format refer to the ReadData.py file
         """
         
-        Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
+        Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data-freq']).delete(-1)
         self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
 
     def Generate_interval_prediction(self,input_features):
@@ -137,7 +137,7 @@ class customers_class:
         """
 
         # Create a time-index for the dates that are being predicted
-        Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq='30T').delete(-1)
+        Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data-freq']).delete(-1)
         
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
         self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
@@ -174,8 +174,8 @@ class customers_class:
         This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
         class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
         """
-
         Times = range(0,len(datetimes))
+        # Times = range(0,len(data.loc[customers_nmi[0]][input_features['Start training']:input_features['Last-observed-window']]))
         result_disaggregation = pool_executor_disaggregation(Demand_disaggregation,Times)
         Total_res = [res for res in result_disaggregation]
         
@@ -270,7 +270,6 @@ def pool_executor_disaggregation(function_name,Times):
     with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
         results = executor.map(function_name,Times)  
     return results
-
 
 
 # # ==================================================================================================

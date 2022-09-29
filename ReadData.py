@@ -47,7 +47,9 @@ input_features = { 'Forecasted_param': 'active_power',         # set this parame
                     'End training': '2022-07-27',
                     'Last-observed-window': '2022-07-27',
                     'Window size': 48 ,
-                    'Windows to be forecasted':    3      }
+                    'Windows to be forecasted':    3,     
+                    'data-freq' : '30T'
+                     }
 
 
 # Add PV instalation and size, and load type to the data from nmi.csv file
