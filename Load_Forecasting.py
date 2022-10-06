@@ -18,7 +18,7 @@ from itertools import repeat
 from multiprocessing import cpu_count
 import multiprocessing as mp
 
-from pyomo.environ import NonNegativeReals, ConstraintList, ConcreteModel, Var, Objective
+from pyomo.environ import NonNegativeReals, ConstraintList, ConcreteModel, Var, Objective, Set, Constraint
 from pyomo.opt import SolverFactory
 
 from tqdm import tqdm
@@ -234,23 +234,21 @@ def Demand_disaggregation(t):
     PanleSize_{i} and P^{agg}_{i,t} denote the PV panel size of nmi i, and the recorded aggregated demand at nmi i and time t, respectively.
     """
 
-    Time = range(t,t+1)
     model=ConcreteModel()
-    model.pv=Var(Time, bounds=(0,1))
-    model.demand=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
-    model.penalty_p=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
-    model.penalty_n=Var(Time,customers_nmi_with_pv,within=NonNegativeReals)
+    model.Time = Set(initialize=range(t,t+1))
+    model.pv=Var(model.Time, bounds=(0,1))
+    model.demand=Var(model.Time,customers_nmi_with_pv,within=NonNegativeReals)
+    model.penalty_p=Var(model.Time,customers_nmi_with_pv,within=NonNegativeReals)
+    model.penalty_n=Var(model.Time,customers_nmi_with_pv,within=NonNegativeReals)
 
     # # Constraints
-    model.Const=ConstraintList()
-
-    for t in Time:
-        for i in customers_nmi_with_pv:
-            model.Const.add(model.demand[t,i] - model.pv[t] * customers[i].data.pv_system_size[datetimes[0]] == customers[i].data.active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i]   )
+    def LoadBalance(model,t,i):
+        return model.demand[t,i] - model.pv[t] * customers[i].data.pv_system_size[datetimes[0]] == customers[i].data.active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i] 
+    model.cons = Constraint(model.Time,customers_nmi_with_pv,rule=LoadBalance)
 
     # # Objective
     def Objrule(model):
-        return sum(model.pv[t] for t in Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in customers_nmi_with_pv ) for t in Time)
+        return sum(model.pv[t] for t in model.Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in customers_nmi_with_pv ) for t in model.Time)
     model.obj=Objective(rule=Objrule)
 
     # # Solve the model
