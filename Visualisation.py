@@ -193,7 +193,8 @@ plt.show()
 
 # # Plot Predition vs Real data using point-based approach
 # # ==============================================================================
-# customers_class.Generate_disaggregation_regression()
+# from Load_Forecasting import Generate_disaggregation_regression
+# Generate_disaggregation_regression()
 
 # customers[nmi].Generate_forecaster_object(input_features)
 # customers[nmi].Generate_prediction(input_features)
@@ -220,5 +221,5 @@ plt.show()
 # ax.legend()
 # plt.xlabel("Time")
 # plt.ylabel("Active Power (Watt)")
-# plt.savefig('Real_vs_pred_diss.eps', format='eps')
+# # plt.savefig('Real_vs_pred_diss.eps', format='eps')
 # plt.show()   

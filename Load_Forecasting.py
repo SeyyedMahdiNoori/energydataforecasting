@@ -142,50 +142,24 @@ class customers_class:
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
         self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
 
-    @staticmethod
-    def Generate_disaggregation_regression():
 
-        """
-        Generate_disaggregation_regression()
-        
-        This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
-        Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
-        is summation all electricity usage and generation that happens behind the meter. 
-        """
+    def Generate_disaggregation_using_reactive(self):
 
-        pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
-                               np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
-                              ).coef_[0]   for t in range(0,len(datetimes))]
+        PQ_coeff = (self.data.load_active/self.data.load_reactive).resample('D').mean()
+        PQ_coeff[(PQ_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = PQ_coeff[-1]
+        PQ_coeff = PQ_coeff.resample('5T').ffill()
+        PQ_coeff = PQ_coeff.drop(PQ_coeff.index[-1])
 
-        for i in customers_nmi_with_pv:
-            customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
-            customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+        load_est = PQ_coeff * self.data.load_reactive
+        filt = (load_est.index <= self.data.load_reactive.index[-1].strftime("%Y-%m-%d %H:%M:%S"))
+        load_est = load_est.loc[filt].copy()
+        load_est = load_est[~load_est.index.duplicated(keep='first')]
 
-        for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-            customers[i].data['pv_disagg'] = 0
-            customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+        pv_est = load_est  - self.data.active_power
+        pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
 
-    @staticmethod
-    def Generate_disaggregation_optimisation():
-
-        """
-        Generate_disaggregation_optimisation()
-        
-        This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
-        class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
-        """
-        Times = range(0,len(datetimes))
-        # Times = range(0,len(data.loc[customers_nmi[0]][input_features['Start training']:input_features['Last-observed-window']]))
-        result_disaggregation = pool_executor_disaggregation(Demand_disaggregation,Times)
-        Total_res = [res for res in result_disaggregation]
-        
-        for i in customers_nmi_with_pv:
-            customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
-            customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
-
-        for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-            customers[i].data['pv_disagg'] = 0
-            customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+        self.data['pv_disagg'] = pv_est
+        self.data['demand_disagg'] = pv_est
 
     #######
     # To be added
@@ -426,6 +400,52 @@ def read_json_interval(filename):
     
     return(loaded_predictions_output)
 
+def Generate_disaggregation_regression():
+
+    """
+    Generate_disaggregation_regression()
+    
+    This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
+    Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
+    is summation all electricity usage and generation that happens behind the meter. 
+    """
+
+    pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
+                            np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
+                            ).coef_[0]   for t in range(0,len(datetimes))]
+
+    for i in customers_nmi_with_pv:
+        customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+        customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+
+    for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
+        customers[i].data['pv_disagg'] = 0
+        customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+
+def Generate_disaggregation_optimisation():
+
+    """
+    Generate_disaggregation_optimisation()
+    
+    This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
+    class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
+    """
+    Times = range(0,len(datetimes))
+    # Times = range(0,len(data.loc[customers_nmi[0]][input_features['Start training']:input_features['Last-observed-window']]))
+    result_disaggregation = pool_executor_disaggregation(Demand_disaggregation,Times)
+    Total_res = [res for res in result_disaggregation]
+    
+    for i in customers_nmi_with_pv:
+        customers[i].data['pv_disagg'] = [Total_res[t][0][i] for t in Times]
+        customers[i].data['demand_disagg'] = [Total_res[t][1][i] for t in Times]
+
+    for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
+        customers[i].data['pv_disagg'] = 0
+        customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+
+
+
+
 def Forecast_using_disaggregation(customers_nmi,input_features):
 
     """
@@ -436,7 +456,7 @@ def Forecast_using_disaggregation(customers_nmi,input_features):
     and returns an aggregated forecast for all nmis in pandas.Dataframe format.
     """
     
-    customers_class.Generate_disaggregation_optimisation()
+    Generate_disaggregation_optimisation()
 
     input_features_copy = copy(input_features)
     input_features_copy['Forecasted_param']= 'pv_disagg'
@@ -450,7 +470,36 @@ def Forecast_using_disaggregation(customers_nmi,input_features):
     return(predictions_agg)
 
 
+# # This function is used to parallelised the forecasting for each nmi
+# def pool_executor_disaggregation_using_reactive(function_name,customers_nmi_with_pv):
+#     """
+#     pool_executor_forecast_interval(function_name,customers_nmi,input_features)
 
+#     This functions (along with function run_prallel_Interval_Load_Forecast) are used to parallelised forecast_interval() function for each nmi. It accepts the function name to be ran, the list "customers_nmi", and the dictionary 
+#     "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+#     """
+#     with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
+#         results = executor.map(function_name,customers_nmi_with_pv)  
+#     # return results
+
+# # This function outputs the forecasting for each nmi
+# def run_pralledisaggregation_using_reactive(i):
+
+#     """
+#     run_prallel_forecast_pointbased(customers_nmi,input_features)
+
+#     This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
+#     "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+#     """
+
+#     print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = i, second=list(customers.keys()).index(i),third = len(customers)))
+
+#     # Train a forecasting object
+#     customers[i].Generate_disaggregation_using_reactive()
+
+# def run_disaggregation_reactive(customers_nmi_with_pv):
+    
+#     pool_executor_disaggregation_using_reactive(run_pralledisaggregation_using_reactive,customers_nmi_with_pv)
 
 
 # import matplotlib.pyplot as plt
