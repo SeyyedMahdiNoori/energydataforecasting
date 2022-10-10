@@ -29,7 +29,7 @@ plt.show()
 
 # Zooming time series chart
 # ==============================================================================
-zoom = ('2018-01-02 00:00:00','2018-01-03 23:30:00')
+zoom = ('2022-07-02 00:00:00','2022-07-04 23:30:00')
 
 fig = plt.figure(figsize=(12, 6))
 grid = plt.GridSpec(nrows=8, ncols=1, hspace=0.6, wspace=0)
@@ -52,35 +52,35 @@ plt.show()
 
 
 
-# # Boxplot for weekly seasonality
-# # ==============================================================================
-# fig, ax = plt.subplots(figsize=(9, 4))
-# customers[nmi].data['week_day'] = customers[nmi].data.index.day_of_week + 1
-# customers[nmi].data.boxplot(column='active_power', by='week_day', ax=ax)
-# customers[nmi].data.groupby('week_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
-# ax.set_ylabel('Demand')
-# ax.set_title('Demand distribution by week day')
-# ax.set_title('')
-# plt.xlabel("Day of Week")
-# # fig.suptitle('')
-# plt.ylabel("Active Power (Watt)")
-# # plt.savefig('Seasonality_Week.eps', format='eps')
-# plt.show()
+# Boxplot for weekly seasonality
+# ==============================================================================
+fig, ax = plt.subplots(figsize=(9, 4))
+customers[nmi].data['week_day'] = customers[nmi].data.index.day_of_week + 1
+customers[nmi].data.boxplot(column='active_power', by='week_day', ax=ax)
+customers[nmi].data.groupby('week_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
+ax.set_ylabel('Demand')
+ax.set_title('Demand distribution by week day')
+ax.set_title('')
+plt.xlabel("Day of Week")
+# fig.suptitle('')
+plt.ylabel("Active Power (Watt)")
+# plt.savefig('Seasonality_Week.eps', format='eps')
+plt.show()
 
-# # Boxplot for daily seasonality
-# # ==============================================================================
-# fig, ax = plt.subplots(figsize=(9, 4))
-# customers[nmi].data['hour_day'] = customers[nmi].data.index.hour + 1
-# customers[nmi].data.boxplot(column='active_power', by='hour_day', ax=ax)
-# customers[nmi].data.groupby('hour_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
-# ax.set_ylabel('Demand')
-# plt.xlabel("Hour of day")
-# plt.ylabel("Active Power (Watt)")
-# ax.set_title('')
-# ax.set_title('Demand distribution by the time of the day')
-# # fig.suptitle('')
-# # plt.savefig('Seasonality_Day.eps', format='eps')
-# plt.show()
+# Boxplot for daily seasonality
+# ==============================================================================
+fig, ax = plt.subplots(figsize=(9, 4))
+customers[nmi].data['hour_day'] = customers[nmi].data.index.hour + 1
+customers[nmi].data.boxplot(column='active_power', by='hour_day', ax=ax)
+customers[nmi].data.groupby('hour_day')['active_power'].median().plot(style='o-', linewidth=0.8, ax=ax)
+ax.set_ylabel('Demand')
+plt.xlabel("Hour of day")
+plt.ylabel("Active Power (Watt)")
+ax.set_title('')
+ax.set_title('Demand distribution by the time of the day')
+# fig.suptitle('')
+# plt.savefig('Seasonality_Day.eps', format='eps')
+plt.show()
 
 
 # # #### Not done yet
