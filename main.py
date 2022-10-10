@@ -9,18 +9,18 @@
 # Initialize variables
 # To set the data feature like start and end date for training go to the ReadData file
 from Load_Forecasting import customers_nmi, input_features, forecast_pointbased, forecast_interval, export_interval_result_to_json, read_json_interval
-customers_nmi = customers_nmi[0:8]  # Use this line for testing (the number of nmi in the _WANNIA_8MB_MURESK-nmi-loads.csv is 1292. This line takes the first 8 and produces the results)
+# customers_nmi = customers_nmi[0:8]  # Use this line for testing (the number of nmi in the _WANNIA_8MB_MURESK-nmi-loads.csv is 1292. This line takes the first 8 and produces the results)
 
 
 # ==================================================================================================
 # Method (1): Recursive multi-step point-forecasting method
 # ==================================================================================================
 
-# # Generate forecasting values
-# predictions_output = forecast_pointbased(customers_nmi,input_features)
+# Generate forecasting values
+predictions_output = forecast_pointbased(customers_nmi,input_features)
 
-# # Export the results into a csv file
-# predictions_output.to_csv('predictions.csv')
+# Export the results into a csv file
+predictions_output.to_csv('predictions.csv')
 
 
 

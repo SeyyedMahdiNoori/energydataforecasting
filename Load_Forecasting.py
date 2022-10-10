@@ -28,7 +28,7 @@ import json
 from copy import deepcopy as copy
 
 # Get data from the ReadData script
-from ReadData_NextGen import data, customers_nmi, input_features, datetimes, customers_nmi_with_pv, core_usage
+from ReadData import data, customers_nmi, input_features, datetimes, customers_nmi_with_pv, core_usage
 
 # customers_nmi = customers_nmi_with_pv[0:2]
 # customers_nmi_with_pv = customers_nmi_with_pv[0:2]
@@ -161,7 +161,6 @@ class customers_class:
         
         self.data['pv_disagg'] = pv_est
         self.data['demand_disagg'] = load_est
-
 
 
     #######
