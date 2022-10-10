@@ -145,21 +145,24 @@ class customers_class:
 
     def Generate_disaggregation_using_reactive(self):
 
-        PQ_coeff = (self.data.load_active/self.data.load_reactive).resample('D').mean()
-        PQ_coeff[(PQ_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = PQ_coeff[-1]
-        PQ_coeff = PQ_coeff.resample('5T').ffill()
-        PQ_coeff = PQ_coeff.drop(PQ_coeff.index[-1])
+        QP_coeff = (self.data.load_reactive/self.data.load_active[self.data.load_active > 0.001]).resample('D').mean()
+        QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
+        QP_coeff = QP_coeff.resample('5T').ffill()
+        QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
+        QP_coeff = QP_coeff[QP_coeff.index <= self.data.load_reactive.index[-1]]
 
-        load_est = PQ_coeff * self.data.load_reactive
-        filt = (load_est.index <= self.data.load_reactive.index[-1].strftime("%Y-%m-%d %H:%M:%S"))
-        load_est = load_est.loc[filt].copy()
-        load_est = load_est[~load_est.index.duplicated(keep='first')]
+        set_diff = list( set(QP_coeff.index)-set(self.data.load_reactive.index) )
+        QP_coeff = QP_coeff.drop(set_diff)
 
+        load_est = self.data.load_reactive / QP_coeff 
         pv_est = load_est  - self.data.active_power
-        pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
-
+        pv_est[pv_est < 0] = 0
+        load_est = pv_est + self.data.active_power
+        
         self.data['pv_disagg'] = pv_est
-        self.data['demand_disagg'] = pv_est
+        self.data['demand_disagg'] = load_est
+
+
 
     #######
     # To be added
@@ -470,6 +473,15 @@ def Forecast_using_disaggregation(customers_nmi,input_features):
     return(predictions_agg)
 
 
+def run_simple_disaggregate_reactive(customers_nmi_with_pv):
+
+    for i in customers_nmi_with_pv:
+        customers[i].Generate_disaggregation_using_reactive()
+
+
+
+
+
 # # This function is used to parallelised the forecasting for each nmi
 # def pool_executor_disaggregation_using_reactive(function_name,customers_nmi_with_pv):
 #     """
@@ -479,8 +491,7 @@ def Forecast_using_disaggregation(customers_nmi,input_features):
 #     "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
 #     """
 #     with ProcessPoolExecutor(max_workers=int(cpu_count()/core_usage),mp_context=mp.get_context('fork')) as executor:
-#         results = executor.map(function_name,customers_nmi_with_pv)  
-#     # return results
+#         executor.map(function_name,customers_nmi_with_pv)  
 
 # # This function outputs the forecasting for each nmi
 # def run_pralledisaggregation_using_reactive(i):
@@ -495,7 +506,12 @@ def Forecast_using_disaggregation(customers_nmi,input_features):
 #     print(" Customer nmi: {first} --------> This is the {second}-th out of {third} customers".format(first = i, second=list(customers.keys()).index(i),third = len(customers)))
 
 #     # Train a forecasting object
+#     print(i)
 #     customers[i].Generate_disaggregation_using_reactive()
+
+
+
+
 
 # def run_disaggregation_reactive(customers_nmi_with_pv):
     

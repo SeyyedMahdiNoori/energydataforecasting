@@ -4,6 +4,7 @@ import pandas as pd
 
 with open('LoadPVData.pickle', 'rb') as handle:
     data = pickle.load(handle)
+data = data[~data.index.duplicated(keep='first')]
 
 datetimes = data.loc[data.index[0][0]].index
 customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
