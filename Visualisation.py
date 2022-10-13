@@ -5,9 +5,26 @@ plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.size"] = "16"
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
-from Load_Forecasting import customers, customers_nmi, customers_nmi_with_pv, customers_class, Forecast_using_disaggregation,input_features
 import numpy as np
 from sklearn.metrics import mean_squared_error
+
+
+from load_forecasting_functions import read_data
+
+# Set features of the predections
+input_features = {  'file_type': 'Converge',
+                    'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
+                    'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+                    'Start training': '2022-07-01',
+                    'End training': '2022-07-27',
+                    'Last-observed-window': '2022-07-27',
+                    'Window size': 48 ,
+                    'Windows to be forecasted':    3,     
+                    'data_freq' : '30T',
+                    'core_usage': 4      
+                     }
+
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers = read_data(input_features)
 
 # Set this value to choose an nmi from customers_nmi 
 # Examples
@@ -20,7 +37,6 @@ fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
-# ax.legend()
 ax.set_title('Behind the meter measurement')
 # plt.savefig('Active_power_data.eps', format='eps')
 plt.show()
@@ -29,7 +45,7 @@ plt.show()
 
 # Zooming time series chart
 # ==============================================================================
-zoom = ('2022-07-02 00:00:00','2022-07-04 23:30:00')
+zoom = (datetimes[int(len(datetimes)/15)] ,datetimes[int(len(datetimes)/10)] )
 
 fig = plt.figure(figsize=(12, 6))
 grid = plt.GridSpec(nrows=8, ncols=1, hspace=0.6, wspace=0)
@@ -83,27 +99,27 @@ ax.set_title('Demand distribution by the time of the day')
 plt.show()
 
 
-# # #### Not done yet
-# # # Violinplot
-# # # ==============================================================================
-# # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 3.5))
-# # sns.violinplot(
-# #     x       = 'Demand',
-# #     y       = 'Holiday',
-# #     data    = data.assign(Holiday = data.Holiday.astype(str)),
-# #     palette = 'tab10',
-# #     ax      = ax
-# # )
-# # ax.set_title('Distribution of demand between holidays and non-holidays')
-# # ax.set_xlabel('Demand')
-# # ax.set_ylabel('Holiday');
-# # plt.show()
+# # # #### Not done yet
+# # # # Violinplot
+# # # # ==============================================================================
+# # # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 3.5))
+# # # sns.violinplot(
+# # #     x       = 'Demand',
+# # #     y       = 'Holiday',
+# # #     data    = data.assign(Holiday = data.Holiday.astype(str)),
+# # #     palette = 'tab10',
+# # #     ax      = ax
+# # # )
+# # # ax.set_title('Distribution of demand between holidays and non-holidays')
+# # # ax.set_xlabel('Demand')
+# # # ax.set_ylabel('Holiday');
+# # # plt.show()
 
-# # Autocorrelation plot
-# # ==============================================================================
-# fig, ax = plt.subplots(figsize=(7, 3))
-# plot_acf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
-# plt.show()
+# Autocorrelation plot
+# ==============================================================================
+fig, ax = plt.subplots(figsize=(7, 3))
+plot_acf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
+plt.show()
 
 # Partial autocorrelation plot
 # ==============================================================================
