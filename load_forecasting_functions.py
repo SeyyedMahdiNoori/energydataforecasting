@@ -304,7 +304,30 @@ def run_single_Interval_Load_Forecast(customers,input_features):
     # Generate interval predictions 
     customers.Generate_interval_prediction(input_features)
     
+    return customers.interval_predictions
+
+
+# This function outputs the forecasting for each nmi
+def run_single_Interval_Load_Forecast_for_parallel(customers,input_features):
+
+    """
+    run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
+
+    This functions (along with function pool_executor_forecast_interval) are used to parallelised forecast_interval() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    """
+
+    print(" Customer nmi: {first}".format(first = customers.nmi))
+
+
+    # Train a forecasting object
+    customers.Generate_forecaster_object(input_features)
+    
+    # Generate interval predictions 
+    customers.Generate_interval_prediction(input_features)
+    
     return customers.interval_predictions.rename(columns={'pred': customers.nmi})
+
 
 
 # This function uses the parallelised function and save the result into a single dictionary 
@@ -321,7 +344,7 @@ def forecast_interval(customers,input_features):
     all the nmis in pandas.Dataframe format.
     """
 
-    predictions_prallel = pool_executor_parallel(run_single_Interval_Load_Forecast,customers.values(),input_features)
+    predictions_prallel = pool_executor_parallel(run_single_Interval_Load_Forecast_for_parallel,customers.values(),input_features)
  
     predictions_prallel = {predictions_prallel[i].columns[0]: predictions_prallel[i].rename(columns={predictions_prallel[i].columns[0]: 'pred'}) for i in range(0,len(predictions_prallel))}
 
