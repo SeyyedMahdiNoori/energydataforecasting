@@ -201,7 +201,7 @@ def read_data(input_features):
             
             This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
             The confidence level can be set in the function parameters as "interval = [10, 90]".
-            
+        
             input_features is a dictionary. To find an example of its format refer to the ReadData.py file
             """
 
@@ -214,7 +214,7 @@ def read_data(input_features):
 
         def Generate_disaggregation_using_reactive(self):
 
-            QP_coeff = (self.data.load_reactive/self.data.load_active[self.data.load_active > 0.001]).resample('D').mean()
+            QP_coeff = (self.data.load_reactive.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.load_active.between_time('0:00','5:00') > 0.001]).resample('D').mean()
             QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
             QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
