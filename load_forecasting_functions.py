@@ -86,6 +86,8 @@ def read_data(input_features):
             data = pickle.load(handle)
         data = data[~data.index.duplicated(keep='first')]
 
+        data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+
         datetimes = data.loc[data.index[0][0]].index
         customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
         customers_nmi_with_pv = copy(customers_nmi)
@@ -214,16 +216,16 @@ def read_data(input_features):
 
         def Generate_disaggregation_using_reactive(self):
 
-            QP_coeff = (self.data.load_reactive.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.load_active.between_time('0:00','5:00') > 0.001]).resample('D').mean()
+            QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
             QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
             QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
-            QP_coeff = QP_coeff[QP_coeff.index <= self.data.load_reactive.index[-1]]
+            QP_coeff = QP_coeff[QP_coeff.index <= self.data.reactive_power.index[-1]]
 
-            set_diff = list( set(QP_coeff.index)-set(self.data.load_reactive.index) )
+            set_diff = list( set(QP_coeff.index)-set(self.data.reactive_power.index) )
             QP_coeff = QP_coeff.drop(set_diff)
 
-            load_est = self.data.load_reactive / QP_coeff 
+            load_est = self.data.reactive_power / QP_coeff 
             pv_est = load_est  - self.data.active_power
             pv_est[pv_est < 0] = 0
             load_est = pv_est + self.data.active_power
