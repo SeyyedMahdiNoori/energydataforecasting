@@ -30,6 +30,7 @@ input_features = {  'file_type': 'NextGen',
 # # Set features of the predections
 # input_features = {  'file_type': 'Converge',
 #                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
+#                     'nmi_type_name': 'nmi.csv',
 #                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
 #                     'Start training': '2022-07-01',
 #                     'End training': '2022-07-27',
@@ -46,7 +47,7 @@ from more_itertools import take
 import pandas as pd
 
 # Read data 
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers = read_data(input_features)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather = read_data(input_features)
 # To obtain the data for each nmi: --> data.loc[nmi]
 # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 

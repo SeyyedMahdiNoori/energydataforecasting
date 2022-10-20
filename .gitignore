@@ -13,3 +13,7 @@ nmi.csv
 prediction_interval_based.json
 LoadPVData.pickle
 -35.3075_149.124417_Solcast_PT5M.csv
+approacheTBA.py
+-35.048_149.124417_Solcast_PT5M.csv
+-35.329911_149.215054_Solcast_PT5M.csv
+test123.py

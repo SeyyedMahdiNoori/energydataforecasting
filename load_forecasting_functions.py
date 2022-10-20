@@ -66,7 +66,7 @@ def read_data(input_features):
         # Add PV instalation and size, and load type to the data from nmi.csv file
         # ==============================================================================
         # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
-        data_nmi = pd.read_csv('nmi.csv')
+        data_nmi = pd.read_csv(input_features['nmi_type_name'])
         data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
         import itertools
@@ -81,6 +81,9 @@ def read_data(input_features):
         # #     if data.loc[i].pv_system_size[0] == 0:
         # #         data.at[i,'active_power'] = data.loc[i].active_power.abs()
 
+        # TBA
+        data_weather = {}
+        
     elif input_features['file_type'] == 'NextGen':
         with open(input_features['file_name'], 'rb') as handle:
             data = pickle.load(handle)
@@ -95,19 +98,48 @@ def read_data(input_features):
         # To obtain the data for each nmi: --> data.loc[nmi]
         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
-        ##### Read 5-minute weather data from SolCast
-        data_weather = pd.read_csv('-35.3075_149.124417_Solcast_PT5M.csv')
+        ##### Read 5-minute weather data from SolCast for three locations
+        data_weather0 = pd.read_csv('-35.048_149.124417_Solcast_PT5M.csv')
+        data_weather0['PeriodStart'] = pd.to_datetime(data_weather0['PeriodStart'])
+        data_weather0 = data_weather0.drop('PeriodEnd', axis=1)
+        data_weather0 = data_weather0.rename(columns={"PeriodStart": "datetime"})
+        data_weather0.set_index('datetime', inplace=True)
+        data_weather0.index = data_weather0.index.tz_convert('Australia/Sydney')
+        # data_weather0['isweekend'] = (data_weather0.index.day_of_week > 4).astype(int)
+        # data_weather0['Temp_EWMA'] = data_weather0.AirTemp.ewm(com=0.5).mean()
+        
+        # *** Temporary *** 
+        filt = (data_weather0.index > '2018-01-01 23:59:00')
+        data_weather0 = data_weather0.loc[filt].copy()
 
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
-        data_weather = data_weather.drop('PeriodEnd', axis=1)
-        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
-        data_weather.set_index('datetime', inplace=True)
-        data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+        data_weather1 = pd.read_csv('-35.3075_149.124417_Solcast_PT5M.csv')
+        data_weather1['PeriodStart'] = pd.to_datetime(data_weather1['PeriodStart'])
+        data_weather1 = data_weather1.drop('PeriodEnd', axis=1)
+        data_weather1 = data_weather1.rename(columns={"PeriodStart": "datetime"})
+        data_weather1.set_index('datetime', inplace=True)
+        data_weather1.index = data_weather1.index.tz_convert('Australia/Sydney')
 
-        # *** Temporary *** the last day of the data (2022-07-31)
-        # is very different from the rest, and is ommitted for now.
-        filt = (data_weather.index > '2018-01-01 23:59:00')
-        data_weather = data_weather.loc[filt].copy()
+
+        # *** Temporary *** 
+        filt = (data_weather1.index > '2018-01-01 23:59:00')
+        data_weather1 = data_weather1.loc[filt].copy()
+
+        data_weather2 = pd.read_csv('-35.329911_149.215054_Solcast_PT5M.csv')
+        data_weather2['PeriodStart'] = pd.to_datetime(data_weather2['PeriodStart'])
+        data_weather2 = data_weather2.drop('PeriodEnd', axis=1)
+        data_weather2 = data_weather2.rename(columns={"PeriodStart": "datetime"})
+        data_weather2.set_index('datetime', inplace=True)
+        data_weather2.index = data_weather2.index.tz_convert('Australia/Sydney')
+
+
+        # *** Temporary *** 
+        filt = (data_weather2.index > '2018-01-01 23:59:00')
+        data_weather2 = data_weather2.loc[filt].copy()
+
+        data_weather = {'Loc1': data_weather0,
+                        'Loc2': data_weather1,
+                        'Loc3': data_weather2,  }
+
 
     global customers_class
 
@@ -235,7 +267,7 @@ def read_data(input_features):
 
     customers = {customer: customers_class(customer,input_features) for customer in customers_nmi}
 
-    return data, customers_nmi,customers_nmi_with_pv,datetimes, customers
+    return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
 
 # # This function is used to parallelised the forecasting for each nmi
 # def pool_executor_parallel(function_name,repeat_iter,input_features):
@@ -504,6 +536,19 @@ def run_single_demand_disaggregation_optimisation_for_parallel(time_step,custome
 
     return result_output
 
+
+
+def pool_executor_parallel_time(function_name,repeat_iter,customers_nmi_with_pv,datetimes,data,input_features):
+    
+    global shared_data_disaggregation_optimisation
+
+    shared_data_disaggregation_optimisation = copy(data)
+
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter,repeat(customers_nmi_with_pv),repeat(datetimes)))  
+    return results
+
+
 def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with_pv):
 
     """
@@ -513,14 +558,7 @@ def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with
     class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
     """
 
-    def pool_executor_parallel_time(function_name,repeat_iter,customers_nmi_with_pv,datetimes,data,input_features):
-        
-        global shared_data_disaggregation_optimisation
-
-        shared_data_disaggregation_optimisation = copy(data)
-        with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-            results = list(executor.map(function_name,repeat_iter,repeat(customers_nmi_with_pv),repeat(datetimes)))  
-        return results
+    global shared_data_disaggregation_optimisation
 
     predictions_prallel = pool_executor_parallel_time(run_single_demand_disaggregation_optimisation_for_parallel,range(0,len(datetimes)),customers_nmi_with_pv,datetimes,data,input_features)
     
@@ -530,8 +568,8 @@ def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with
 
     # print(len(predictions_prallel))
     
-    # if 'shared_data_disaggregation_optimisation' in globals():
-    #     del(shared_data_disaggregation_optimisation)
+    if 'shared_data_disaggregation_optimisation' in globals():
+        del(shared_data_disaggregation_optimisation)
 
     return predictions_prallel
 
@@ -614,6 +652,68 @@ def Generate_disaggregation_using_reactive_all(customers,input_features):
     return(predictions_prallel)
 
 
+
+def disaggregation_single_known_pvs(nmi,known_pv_nmis,customers,datetimes):
+
+    model=ConcreteModel()
+    model.pv_cites = Set(initialize=known_pv_nmis)
+    model.Time = Set(initialize=range(0,len(datetimes)))
+    model.weight=Var(model.pv_cites, bounds=(0,1))
+
+    # # Constraints
+    def LoadBalance(model):
+        return sum(model.weight[i] for i in model.pv_cites) == 1 
+    model.cons = Constraint(rule=LoadBalance)
+
+    # Objective
+    def Objrule(model):
+        return  sum(
+        ( sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
+                - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0]
+        )**2 for t in model.Time)
+
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+
+    # print(res)
+    # for i in model.pv_cites:
+    #     print(model.weight[i].value)
+
+    return pd.concat([sum(model.weight[i].value * customers[i].data.pv/customers[i].data.pv_system_size[0] for i in model.pv_cites) * customers[nmi].data.pv_system_size[0],
+                    -customers[nmi].data.active_power]).max(level=0)
+
+def disaggregation_single_known_pvs_with_temp(nmi,known_pv_nmis,customers,datetimes,pv_iter):
+
+    model=ConcreteModel()
+    model.pv_cites = Set(initialize=known_pv_nmis)
+    model.Time = Set(initialize=range(0,len(datetimes)))
+    model.weight=Var(model.pv_cites, bounds=(0,1))
+
+    # # Constraints
+    def LoadBalance(model):
+        return sum(model.weight[i] for i in model.pv_cites) == 1 
+    model.cons = Constraint(rule=LoadBalance)
+
+    # Objective
+    def Objrule(model):
+        return  sum(
+                    (sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
+                        - pv_iter[datetimes[t]] )**2 for t in model.Time)
+
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+
+    for i in model.pv_cites:
+        print(model.weight[i].value)
+    
+    return pd.concat([sum(model.weight[i].value * customers[i].data.pv/customers[i].data.pv_system_size[0] for i in model.pv_cites) * customers[nmi].data.pv_system_size[0],
+                    -customers[nmi].data.active_power]).max(level=0)
 
 
 
