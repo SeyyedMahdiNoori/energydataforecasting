@@ -16,30 +16,30 @@
 # # ================================================== 
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
-input_features = {  'file_type': 'NextGen',
-                    'file_name': 'LoadPVData.pickle',
-                    'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-                    'Start training': '2018-01-01',
-                    'End training': '2018-02-01',
-                    'Last-observed-window': '2018-02-01',
-                    'Window size':  288,
-                    'Windows to be forecasted':    3,
-                    'data_freq' : '5T',
-                    'core_usage': 8      }  
-
-# # Set features of the predections
-# input_features = {  'file_type': 'Converge',
-#                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_name': 'nmi.csv',
+# input_features = {  'file_type': 'NextGen',
+#                     'file_name': 'LoadPVData.pickle',
 #                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
+#                     'Start training': '2018-01-01',
+#                     'End training': '2018-02-01',
+#                     'Last-observed-window': '2018-02-01',
+#                     'Window size':  288,
+#                     'Windows to be forecasted':    3,
+#                     'data_freq' : '5T',
+#                     'core_usage': 8      }  
+
+# Set features of the predections
+input_features = {  'file_type': 'Converge',
+                    'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
+                    'nmi_type_name': 'nmi.csv',
+                    'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+                    'Start training': '2022-07-01',
+                    'End training': '2022-07-27',
+                    'Last-observed-window': '2022-07-27',
+                    'Window size': 48 ,
+                    'Windows to be forecasted':    3,     
+                    'data_freq' : '30T',
+                    'core_usage': 8      
+                     }
 
 # Import the required libraries
 from load_forecasting_functions import read_data,run_single_forecast_pointbased,forecast_pointbased,run_single_Interval_Load_Forecast,forecast_interval,run_single_demand_disaggregation_optimisation,disaggregation_optimisation,run_single_disaggregate_using_reactive,Generate_disaggregation_using_reactive_all
