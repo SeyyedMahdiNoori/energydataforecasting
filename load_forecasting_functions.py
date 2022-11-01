@@ -528,9 +528,8 @@ def run_single_demand_disaggregation_optimisation_for_parallel(time_step,custome
     result_output_temp =  ({i:    - (model.pv[t].value * data_one_time.loc[i].pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
             {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in customers_nmi_with_pv} )
 
-    result_output = b = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
+    result_output = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
     result_output['demand_disagg'] = result_output_temp[1].values()    
-    result_output.index.names = ['nmi']
     result_output.index.names = ['nmi']
     datetime = [datetimes[t]] * len(result_output)
     result_output['datetime'] = datetime
@@ -722,7 +721,6 @@ def disaggregation_single_known_pvs_pos_pv(nmi,known_pv_nmis,customers,datetimes
     return pd.Series([model.irrid[t].value * customers[nmi].data.pv_system_size[0] for t in model.Time],index=customers[nmi].data.index)
 
 
-
 #### TBA (The authors of "Disaggregating Solar Generation Using Smart Meter Data and Proxy Measurements from Neighbouring Sites" have been contacted to get more info about their article)
 def disaggregation_single_known_pvs_with_temperature_opt(customers,customers_known_pv,datetimes,pv_iter):
     known_pv_nmis = list(customers_known_pv.keys())
@@ -873,6 +871,137 @@ def Generate_disaggregation_using_knownPVS_temprature_all(customers,input_featur
 
 
     return(predictions_output)
+
+
+def Disaggregation_no_PV_houses_single_time(time_step,data,customers_with_pv,customers_without_pv,datetimes):
+    
+    t = time_step
+
+    model=ConcreteModel()
+
+    data_one_time = data.loc[pd.IndexSlice[:, datetimes[t]], :]
+
+    model.Time = Set(initialize=range(t,t+1))
+    model.pv=Var(model.Time,customers_with_pv, bounds=(0,1))
+    model.demand=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_p=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+
+    # # Constraints
+    def LoadBalance(model,t,i):
+        return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
+    model.cons = Constraint(model.Time,customers_with_pv,rule=LoadBalance)
+
+    # # Objective
+    def Objrule(model):
+        return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
+                + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
+                )
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+
+    result_output_temp =  ({i:    (model.pv[t,i].value * data_one_time.loc[i].pv_system_size[0])  for i in customers_with_pv},
+            {i:      model.demand[t,i].value  for i in customers_with_pv} )
+
+    result_output = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
+    result_output['demand_disagg'] = result_output_temp[1].values()    
+    result_output.index.names = ['nmi']
+    datetime = [datetimes[t]] * len(result_output)
+    result_output['datetime'] = datetime
+    result_output.reset_index(inplace=True)
+    result_output.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result_output
+
+
+
+def pool_executor_parallel_time_no_PV_houses(function_name,repeat_iter,customers_with_pv,customers_without_pv,datetimes,data,input_features):
+    
+    global shared_data_disaggregation_optimisation_no_PV
+
+    shared_data_disaggregation_optimisation_no_PV = copy(data)
+
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter,repeat(customers_with_pv),repeat(customers_without_pv),repeat(datetimes)))  
+    return results
+
+
+def disaggregation_optimisation_no_PV_houses(data,input_features,datetimes,customers_with_pv,customers_without_pv):
+
+    """
+    Generate_disaggregation_optimisation()
+    
+    This function disaggregates the demand and generation for all the nodes in the system and all the time-steps, and adds the disaggergations to each
+    class variable. It applies the disaggregation to all nmis. This fuction uses function "pool_executor_disaggregation" to run the disaggregation algorithm.  
+    """
+
+    global shared_data_disaggregation_optimisation_no_PV
+
+    predictions_prallel = pool_executor_parallel_time_no_PV_houses(Disaggregation_no_PV_houses_single_time_for_parallel,range(0,len(datetimes)),customers_with_pv,customers_without_pv,datetimes,data,input_features)
+    
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    print('Done')
+
+    # print(len(predictions_prallel))
+    
+    if 'shared_data_disaggregation_optimisation_no_PV' in globals():
+        del(shared_data_disaggregation_optimisation_no_PV)
+
+    return predictions_prallel
+
+
+def Disaggregation_no_PV_houses_single_time_for_parallel(time_step,customers_with_pv,customers_without_pv,datetimes):
+
+    t = time_step
+
+    model=ConcreteModel()
+
+    data_one_time = shared_data_disaggregation_optimisation_no_PV.loc[pd.IndexSlice[:, datetimes[t]], :]
+
+    model.Time = Set(initialize=range(t,t+1))
+    model.pv=Var(model.Time,customers_with_pv, bounds=(0,1))
+    model.demand=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_p=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+
+    # # Constraints
+    def LoadBalance(model,t,i):
+        return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
+    model.cons = Constraint(model.Time,customers_with_pv,rule=LoadBalance)
+
+    # # Objective
+    def Objrule(model):
+        return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
+                + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
+                )
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+
+    result_output_temp =  ({i:    (model.pv[t,i].value * data_one_time.loc[i].pv_system_size[0])  for i in customers_with_pv},
+            {i:      model.demand[t,i].value  for i in customers_with_pv} )
+
+    result_output = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
+    result_output['demand_disagg'] = result_output_temp[1].values()    
+    result_output.index.names = ['nmi']
+    datetime = [datetimes[t]] * len(result_output)
+    result_output['datetime'] = datetime
+    result_output.reset_index(inplace=True)
+    result_output.set_index(['nmi', 'datetime'], inplace=True)
+
+    print(" Disaggregating {first}-th time step".format(first = t))
+
+    return result_output
+
+
+
+
 
 
 
