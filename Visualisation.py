@@ -1,4 +1,3 @@
-import imp
 import matplotlib.pyplot as plt
 import copy
 plt.rcParams["font.family"] = "Times New Roman"
@@ -11,9 +10,21 @@ from sklearn.metrics import mean_squared_error
 
 from load_forecasting_functions import read_data
 
-# Set features of the predections
+# # Set features of the predections
+# input_features = {  'file_type': 'NextGen',
+#                     'file_name': 'NextGen.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2018-01-01',
+#                     'End training': '2018-02-01',
+#                     'Last-observed-window': '2018-02-01',
+#                     'Window size':  288,
+#                     'Windows to be forecasted':    3,
+#                     'data_freq' : '5T',
+#                     'core_usage': 8      }  
+
 input_features = {  'file_type': 'Converge',
                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
+                    'nmi_type_name': 'nmi.csv',
                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
                     'Start training': '2022-07-01',
                     'End training': '2022-07-27',
@@ -21,22 +32,8 @@ input_features = {  'file_type': 'Converge',
                     'Window size': 48 ,
                     'Windows to be forecasted':    3,     
                     'data_freq' : '30T',
-                    'core_usage': 4      
+                    'core_usage': 8      
                      }
-
-
-# input_features = {  'file_type': 'Converge',
-#                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_name': 'nmi.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
 
 
 data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather = read_data(input_features)

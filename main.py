@@ -16,33 +16,34 @@
 # # ================================================== 
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
-# input_features = {  'file_type': 'NextGen',
-#                     'file_name': 'LoadPVData.pickle',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 8      }  
-
 # Set features of the predections
-input_features = {  'file_type': 'Converge',
-                    'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
-                    'nmi_type_name': 'nmi.csv',
+input_features = {  'file_type': 'NextGen',
+                    'file_name': 'NextGen.csv',
                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-                    'Start training': '2022-07-01',
-                    'End training': '2022-07-27',
-                    'Last-observed-window': '2022-07-27',
-                    'Window size': 48 ,
-                    'Windows to be forecasted':    3,     
-                    'data_freq' : '30T',
-                    'core_usage': 8      
-                     }
+                    'Start training': '2018-01-01',
+                    'End training': '2018-02-01',
+                    'Last-observed-window': '2018-02-01',
+                    'Window size':  288,
+                    'Windows to be forecasted':    3,
+                    'data_freq' : '5T',
+                    'core_usage': 8      }  
+
+# # Set features of the predections
+# input_features = {  'file_type': 'Converge',
+#                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
+#                     'nmi_type_name': 'nmi.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2022-07-01',
+#                     'End training': '2022-07-27',
+#                     'Last-observed-window': '2022-07-27',
+#                     'Window size': 48 ,
+#                     'Windows to be forecasted':    3,     
+#                     'data_freq' : '30T',
+#                     'core_usage': 8      
+#                      }
 
 # Import the required libraries
-from load_forecasting_functions import read_data,run_single_forecast_pointbased,forecast_pointbased,run_single_Interval_Load_Forecast,forecast_interval,run_single_demand_disaggregation_optimisation,disaggregation_optimisation,run_single_disaggregate_using_reactive,Generate_disaggregation_using_reactive_all
+from load_forecasting_functions import read_data,forecast_pointbased_single_node,forecast_pointbased_multiple_nodes,forecast_inetervalbased_single_node,forecast_inetervalbased_multiple_nodes
 from more_itertools import take
 import pandas as pd
 
@@ -60,66 +61,55 @@ nmi = customers_nmi_with_pv[0] # an arbitary customer nmi
 data_one_time = data.loc[pd.IndexSlice[:, datetimes[time_step]], :]   # data for a time step "time_step" 
 
 
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+# #                                                                                     Examples of load forecasting functions
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+
 # # ==================================================
-# # An example to show some of the functionalities
-# # ================================================== 
+# # Method (1): Recursive multi-step point-forecasting method
+# # ==================================================
+
 # # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-res1 = run_single_forecast_pointbased(customers[nmi],input_features) 
+res1 = forecast_pointbased_single_node(customers[nmi],input_features) 
+print('forecast_pointbased_single_node is done!')
 
 # generate forecasting values for all customers using a recursive multi-step point-forecasting method. 
-res2 = forecast_pointbased(n_customers,input_features)  
-
- # generate forecasting values for a specific nmi using a recursive multi-step probabilistic forecasting method
-res3 = run_single_Interval_Load_Forecast(customers[nmi],input_features)
-
-# generate forecasting values for all customers using a  recursive multi-step probabilistic forecasting method. 
-res4 = forecast_interval(n_customers,input_features) 
-
-# disaggregate solar and demand from aggregated data using an optimisation algorithm for a specific time-step
-res5 = run_single_demand_disaggregation_optimisation(time_step,customers_nmi_with_pv,datetimes,data_one_time)
-
-# disaggregate solar and demand from aggregated data using an optimisation algorithm for all time-steps
-res6 = disaggregation_optimisation(data,input_features,datetimes[0:5],customers_nmi_with_pv)
-
-# disaggregate solar and demand from aggregated data using reactive power as indicator for a specific time-step
-res7 = run_single_disaggregate_using_reactive(customers[nmi],input_features)
-
-# disaggregate solar and demand from aggregated data using reactive power as indicator for all time-steps
-res8 = Generate_disaggregation_using_reactive_all(n_customers,input_features)
-
-
-
-
-
-
-
-# ==================================================================================================
-# Method (1): Recursive multi-step point-forecasting method
-# ==================================================================================================
-
-# # Generate forecasting values
-# predictions_output = forecast_pointbased(customers,input_features)
+res2 = forecast_pointbased_multiple_nodes(n_customers,input_features) 
+print('forecast_pointbased_multiple_nodes is done!') 
 
 # # Export the results into a csv file
-# predictions_output.to_csv('predictions.csv')
+# res2.to_csv('predictions.csv')
 
+# # ==================================================
+# # Method (2): Recursive multi-step probabilistic forecasting method
+# # ==================================================
 
+# generate forecasting values for a specific nmi using a recursive multi-step probabilistic forecasting method
+res3 = forecast_inetervalbased_single_node(customers[nmi],input_features)
+print('forecast_inetervalbased_single_node is done!') 
 
-# ==================================================================================================
-# Method (2): Recursive multi-step probabilistic forecasting method
-# ==================================================================================================
-
-# # Run the parralel function
-# predictions_interval = forecast_interval(customers,input_features)
+# generate forecasting values for all customers using a  recursive multi-step probabilistic forecasting method. 
+res4 = forecast_inetervalbased_multiple_nodes(n_customers,input_features)
+print('forecast_inetervalbased_multiple_nodes is done!')  
 
 # # Export the results into a json file
-# export_interval_result_to_json(predictions_interval)
+# from load_forecasting_functions import export_interval_result_to_json
+# export_interval_result_to_json(res4)
 
 # # To read the result from the json file run the following function
+# from load_forecasting_functions import read_json_interval
 # filename = "prediction_interval_based.json"
 # loaded_predictions_output = read_json_interval(filename)
 
 
+
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+# #                                                                                     Examples of solar demand disaggregation functions
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
 
 
 

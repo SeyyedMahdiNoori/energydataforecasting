@@ -51,10 +51,10 @@ def read_data(input_features):
         # Save customer nmis in a list
         customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
 
-        # *** Temporary *** the last day of the data (2022-07-31)
-        # is very different from the rest, and is ommitted for now.
-        filt = (data['datetime'] < '2022-07-31')
-        data = data.loc[filt].copy()
+        # # *** Temporary *** the last day of the data (2022-07-31)
+        # # is very different from the rest, and is ommitted for now.
+        # filt = (data['datetime'] < '2022-07-31')
+        # data = data.loc[filt].copy()
 
         # Make datetime index of the dataset
         data.set_index(['nmi', 'datetime'], inplace=True)
@@ -84,15 +84,25 @@ def read_data(input_features):
         # #     if data.loc[i].pv_system_size[0] == 0:
         # #         data.at[i,'active_power'] = data.loc[i].active_power.abs()
 
-        # TBA
+        # # # TBA
         data_weather = {}
         
     elif input_features['file_type'] == 'NextGen':
-        with open(input_features['file_name'], 'rb') as handle:
-            data = pickle.load(handle)
-        data = data[~data.index.duplicated(keep='first')]
 
+        # with open(input_features['file_name'], 'rb') as handle:
+        #     data = pickle.load(handle)
+        # data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+
+
+        data = pd.read_csv(input_features['file_name'])
+        # data = data[~data.index.duplicated(keep='first')]
         data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+        
+        # format datetime to pandas datetime format
+        data['datetime'] = pd.to_datetime(data['datetime'])
+        
+        # Make datetime index of the dataset
+        data.set_index(['nmi', 'datetime'], inplace=True)
 
         datetimes = data.loc[data.index[0][0]].index
         customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
@@ -263,14 +273,29 @@ def read_data(input_features):
             load_est = self.data.reactive_power / QP_coeff 
             pv_est = load_est  - self.data.active_power
             pv_est[pv_est < 0] = 0
+            # pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
             load_est = pv_est + self.data.active_power
             
             self.data['pv_disagg'] = pv_est
             self.data['demand_disagg'] = load_est
 
+        def Generate_disaggregation_positive_minimum_PV(self):
+            D = copy(self.data.active_power)
+            D[D<=0] = 0
+            S = copy(self.data.active_power)
+            S[S>=0] = 0
+            self.data['pv_disagg'] =  - S
+            self.data['demand_disagg'] = D
+
     customers = {customer: customers_class(customer,input_features) for customer in customers_nmi}
 
     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
+
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+# #                                                                                     Solar and Demand Forecasting functions
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
 
 # # This function is used to parallelised the forecasting for each nmi
 # def pool_executor_parallel(function_name,repeat_iter,input_features):
@@ -284,12 +309,12 @@ def pool_executor_parallel(function_name,repeat_iter,input_features):
         return results
 
 
-# # ==================================================================================================
+# # ================================================================
 # # Method (1): Recursive multi-step point-forecasting method
-# # ==================================================================================================
+# # ================================================================
 
 # This function outputs the forecasting for each nmi
-def run_single_forecast_pointbased(customers,input_features):
+def forecast_pointbased_single_node(customer,input_features):
 
     """
     run_prallel_forecast_pointbased(customers_nmi,input_features)
@@ -299,31 +324,31 @@ def run_single_forecast_pointbased(customers,input_features):
     """
     
     # print(customers)
-    print(" Customer nmi: {first}".format(first = customers.nmi))
+    print(" Customer nmi: {first}".format(first = customer.nmi))
 
     # Train a forecasting object
-    customers.Generate_forecaster_object(input_features)
+    customer.Generate_forecaster_object(input_features)
     
     # Generate predictions 
-    customers.Generate_prediction(input_features)
+    customer.Generate_prediction(input_features)
 
-    return customers.predictions.rename(columns={'pred': customers.nmi})
+    return customer.predictions.rename(columns={'pred': customer.nmi})
 
 
-def forecast_pointbased(customers,input_features):
+def forecast_pointbased_multiple_nodes(customers,input_features):
 
-    predictions_prallel = pool_executor_parallel(run_single_forecast_pointbased,customers.values(),input_features)
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_single_node,customers.values(),input_features)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=1)
 
     return predictions_prallel
 
-# # ==================================================================================================
+# # ================================================================
 # # Method (2): Recursive multi-step probabilistic forecasting method
-# # ==================================================================================================
+# # ================================================================
 
 # This function outputs the forecasting for each nmi
-def run_single_Interval_Load_Forecast(customers,input_features):
+def forecast_inetervalbased_single_node(customer,input_features):
 
     """
     run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
@@ -332,20 +357,20 @@ def run_single_Interval_Load_Forecast(customers,input_features):
     "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
     """
 
-    print(" Customer nmi: {first}".format(first = customers.nmi))
+    print(" Customer nmi: {first}".format(first = customer.nmi))
 
 
     # Train a forecasting object
-    customers.Generate_forecaster_object(input_features)
+    customer.Generate_forecaster_object(input_features)
     
     # Generate interval predictions 
-    customers.Generate_interval_prediction(input_features)
+    customer.Generate_interval_prediction(input_features)
     
-    return customers.interval_predictions
+    return customer.interval_predictions
 
 
 # This function outputs the forecasting for each nmi
-def run_single_Interval_Load_Forecast_for_parallel(customers,input_features):
+def forecast_inetervalbased_single_node_for_parallel(customer,input_features):
 
     """
     run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
@@ -354,21 +379,21 @@ def run_single_Interval_Load_Forecast_for_parallel(customers,input_features):
     "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
     """
 
-    print(" Customer nmi: {first}".format(first = customers.nmi))
+    print(" Customer nmi: {first}".format(first = customer.nmi))
 
 
     # Train a forecasting object
-    customers.Generate_forecaster_object(input_features)
+    customer.Generate_forecaster_object(input_features)
     
     # Generate interval predictions 
-    customers.Generate_interval_prediction(input_features)
+    customer.Generate_interval_prediction(input_features)
     
-    return customers.interval_predictions.rename(columns={'pred': customers.nmi})
+    return customer.interval_predictions.rename(columns={'pred': customer.nmi})
 
 
 
 # This function uses the parallelised function and save the result into a single dictionary 
-def forecast_interval(customers,input_features):
+def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
     """
     forecast_interval(customers_nmi,input_features) 
@@ -381,7 +406,7 @@ def forecast_interval(customers,input_features):
     all the nmis in pandas.Dataframe format.
     """
 
-    predictions_prallel = pool_executor_parallel(run_single_Interval_Load_Forecast_for_parallel,customers.values(),input_features)
+    predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node_for_parallel,customers.values(),input_features)
  
     predictions_prallel = {predictions_prallel[i].columns[0]: predictions_prallel[i].rename(columns={predictions_prallel[i].columns[0]: 'pred'}) for i in range(0,len(predictions_prallel))}
 
@@ -419,15 +444,51 @@ def read_json_interval(filename):
     
     return(loaded_predictions_output)
 
-# # ==================================================================================================
-# # Disaggregations algorithms
-# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
+# #                                                                                     Solar and Demand Disaggregation Algorithms
+# # ==================================================================================================# # ==================================================================================================
+# # ==================================================================================================# # ==================================================================================================
 
 
-def run_single_demand_disaggregation_optimisation(time_step,customers_nmi_with_pv,datetimes,data_one_time):
+### The numbering for each technique refer to the numbering used in the associated article ("Customer-Level Solar-Demand Disaggregation: The Value of Information").
+### Also, for more details on each approach, please refer to the above article. In what follows, we use SDD which stands for solar demand disaggregation
+
+
+# # ================================================================
+# # Technique 1: Minimum Solar Generation
+# # ================================================================
+
+def SDD_min_solar_single_node(customer,input_features):
+
+    print(f'customer_ID: {customer.nmi} begin')
+
+    customer.Generate_disaggregation_positive_minimum_PV()
+
+    result = pd.DataFrame(customer.data.pv_disagg)
+    result['demand_disagg'] = customer.data.demand_disagg
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return(result)
+
+def SDD_min_solar_mutiple_nodes(customers,input_features):
+
+    predictions_prallel = pool_executor_parallel(SDD_min_solar_single_node,customers.values(),input_features)
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return(predictions_prallel)
+
+# # ================================================================
+# # Technique 2: Same Irradiance
+# # ================================================================
+
+def SDD_Same_Irrad_single_time(time_step,customers_nmi_with_pv,datetimes,data_one_time):
 
     """
-    Demand_disaggregation(t,customers_nmi_with_pv,customers), where t is the time-step of the disaggregation.
+    SDD_Same_Irrad(t,customers_nmi_with_pv,datetimes,data_one_time), where t is the time-step of the disaggregation.
     
     This function disaggregates the demand and generation for all the nodes in the system at time-step t. 
 
@@ -466,7 +527,7 @@ def run_single_demand_disaggregation_optimisation(time_step,customers_nmi_with_p
     print(" Disaggregating {first}-th time step".format(first = t))
     # print(t)
 
-    result_output_temp =  ({i:    - (model.pv[t].value * data_one_time.loc[i].pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
+    result_output_temp =  ({i:    (model.pv[t].value * data_one_time.loc[i].pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
             {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in customers_nmi_with_pv} )
 
     result_output = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
@@ -481,7 +542,7 @@ def run_single_demand_disaggregation_optimisation(time_step,customers_nmi_with_p
 
     return result_output
 
-def run_single_demand_disaggregation_optimisation_for_parallel(time_step,customers_nmi_with_pv,datetimes):
+def SDD_Same_Irrad_for_parallel(time_step,customers_nmi_with_pv,datetimes):
 
     """
     Demand_disaggregation(t,customers_nmi_with_pv,customers), where t is the time-step of the disaggregation.
@@ -520,12 +581,10 @@ def run_single_demand_disaggregation_optimisation_for_parallel(time_step,custome
     # # Solve the model
     opt = SolverFactory('gurobi')
     opt.solve(model)
-    
 
     print(" Disaggregating {first}-th time step".format(first = t))
-    # print(t)
 
-    result_output_temp =  ({i:    - (model.pv[t].value * data_one_time.loc[i].pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
+    result_output_temp =  ({i:    (model.pv[t].value * data_one_time.loc[i].pv_system_size[0] + model.penalty_p[t,i].value)  for i in customers_nmi_with_pv},
             {i:      model.demand[t,i].value + model.penalty_n[t,i].value  for i in customers_nmi_with_pv} )
 
     result_output = pd.DataFrame.from_dict(result_output_temp[0], orient='index').rename(columns={0: 'pv_disagg'})
@@ -538,8 +597,6 @@ def run_single_demand_disaggregation_optimisation_for_parallel(time_step,custome
 
     return result_output
 
-
-
 def pool_executor_parallel_time(function_name,repeat_iter,customers_nmi_with_pv,datetimes,data,input_features):
     
     global shared_data_disaggregation_optimisation
@@ -550,8 +607,7 @@ def pool_executor_parallel_time(function_name,repeat_iter,customers_nmi_with_pv,
         results = list(executor.map(function_name,repeat_iter,repeat(customers_nmi_with_pv),repeat(datetimes)))  
     return results
 
-
-def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with_pv):
+def SDD_Same_Irrad_multiple_times(data,input_features,datetimes,customers_nmi_with_pv):
 
     """
     Generate_disaggregation_optimisation()
@@ -562,7 +618,7 @@ def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with
 
     global shared_data_disaggregation_optimisation
 
-    predictions_prallel = pool_executor_parallel_time(run_single_demand_disaggregation_optimisation_for_parallel,range(0,len(datetimes)),customers_nmi_with_pv,datetimes,data,input_features)
+    predictions_prallel = pool_executor_parallel_time(SDD_Same_Irrad_for_parallel,range(0,len(datetimes)),customers_nmi_with_pv,datetimes,data,input_features)
     
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -575,305 +631,10 @@ def disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with
 
     return predictions_prallel
 
-
-def Generate_disaggregation_regression(customers,customers_nmi,customers_nmi_with_pv,datetimes):
-
-    """
-    Generate_disaggregation_regression(customers)
-    
-    This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
-    Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
-    is summation all electricity usage and generation that happens behind the meter. 
-    """
-
-    pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
-                            np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
-                            ).coef_[0]   for t in range(0,len(datetimes))]
-
-    for i in customers_nmi_with_pv:
-        customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
-        customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
-
-    for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-        customers[i].data['pv_disagg'] = 0
-        customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
-
-
-def Forecast_using_disaggregation(data,input_features,datetimes,customers_nmi_with_pv,customers_nmi,customers):
-
-    """
-    Forecast_using_disaggregation(customers_nmi,input_features)
-
-    This function is used to generate forecast values. It first disaggregates the demand and generation for all nmi using function
-    Generate_disaggregation_optimisation. It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
-    and returns an aggregated forecast for all nmis in pandas.Dataframe format.
-    """
-    
-    opt_disaggregate = disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with_pv)
-
-    for i in customers_nmi_with_pv:
-        customers[i].data['pv_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
-        customers[i].data['demand_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
-
-    for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-        customers[i].data['pv_disagg'] = 0
-        customers[i].data['demand_disagg'] = customers[i].data.active_power.values
-
-
-    input_features_copy = copy(input_features)
-    input_features_copy['Forecasted_param']= 'pv_disagg'
-    predictions_output_pv = forecast_pointbased(customers,input_features_copy)
-
-    input_features_copy['Forecasted_param']= 'demand_disagg'
-    predictions_output_demand = forecast_pointbased(customers,input_features_copy)
-
-    predictions_agg = predictions_output_demand + predictions_output_pv
-
-    return(predictions_agg)
-
-
-
-def run_single_disaggregate_using_reactive(customers,input_features):
-
-    customers.Generate_disaggregation_using_reactive()
-
-    result = pd.DataFrame(customers.data.pv_disagg)
-    result['demand_disagg'] = customers.data.demand_disagg
-    nmi = [customers.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
-
-    return(result)
-
-def Generate_disaggregation_using_reactive_all(customers,input_features):
-
-    predictions_prallel = pool_executor_parallel(run_single_disaggregate_using_reactive,customers.values(),input_features)
-    predictions_prallel = pd.concat(predictions_prallel, axis=0)
-
-    return(predictions_prallel)
-
-
-
-def disaggregation_single_known_pvs(nmi,known_pv_nmis,customers,datetimes):
-
-    model=ConcreteModel()
-    model.pv_cites = Set(initialize=known_pv_nmis)
-    model.Time = Set(initialize=range(0,len(datetimes)))
-    model.weight=Var(model.pv_cites, bounds=(0,1))
-
-    # # Constraints
-    def LoadBalance(model):
-        return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
-
-    # Objective
-    def Objrule(model):
-        return  sum(
-        ( sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
-                - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0]
-        )**2 for t in model.Time)
-
-    model.obj=Objective(rule=Objrule)
-
-    # # Solve the model
-    opt = SolverFactory('gurobi')
-    opt.solve(model)
-
-    # print(res)
-    # for i in model.pv_cites:
-    #     print(model.weight[i].value)
-
-    return pd.concat([sum(model.weight[i].value * customers[i].data.pv/customers[i].data.pv_system_size[0] for i in model.pv_cites) * customers[nmi].data.pv_system_size[0],
-                    -customers[nmi].data.active_power]).max(level=0)
-
-
-def disaggregation_single_known_pvs_pos_pv(nmi,known_pv_nmis,customers,datetimes):
-
-    model=ConcreteModel()
-    model.pv_cites = Set(initialize=known_pv_nmis)
-    model.Time = Set(initialize=range(0,len(datetimes)))
-    model.weight=Var(model.pv_cites, bounds=(0,1))
-    model.irrid=Var(range(0,len(datetimes)),bounds=(0,1))
-
-    # # Constraints
-    def LoadBalance(model):
-        return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
-
-    def pv_irrid(model,t):
-        return model.irrid[t] == sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
-    model.cons_pv = Constraint(model.Time,rule=pv_irrid)
-
-
-
-    # Objective
-    def Objrule(model):
-        return  sum( (model.irrid[t] - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0] )**2
-                      for t in model.Time)
-
-    model.obj=Objective(rule=Objrule)
-
-    # # Solve the model
-    opt = SolverFactory('gurobi')
-    opt.solve(model)
-
-    return pd.Series([model.irrid[t].value * customers[nmi].data.pv_system_size[0] for t in model.Time],index=customers[nmi].data.index)
-
-
-#### TBA (The authors of "Disaggregating Solar Generation Using Smart Meter Data and Proxy Measurements from Neighbouring Sites" have been contacted to get more info about their article)
-def disaggregation_single_known_pvs_with_temperature_opt(customers,customers_known_pv,datetimes,pv_iter):
-    known_pv_nmis = list(customers_known_pv.keys())
-    model=ConcreteModel()
-    model.pv_cites = Set(initialize=known_pv_nmis)
-    model.Time = Set(initialize=range(0,len(datetimes)))
-    model.weight=Var(model.pv_cites, bounds=(0,1))
-
-    # # Constraints
-    def LoadBalance(model):
-        return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
-
-    # Objective
-    def Objrule(model):
-        return  sum(
-                    (sum(model.weight[i] * customers_known_pv[i].data.pv[datetimes[t]]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites)
-                        - pv_iter[datetimes[t]]/customers.data.pv_system_size[0] )**2 for t in model.Time)
-
-    model.obj=Objective(rule=Objrule)
-
-    # # Solve the model
-    opt = SolverFactory('gurobi')
-    opt.solve(model)
-
-    # for i in model.pv_cites:
-    #     print(model.weight[i].value)
-    
-    return pd.concat([sum(model.weight[i].value * customers_known_pv[i].data.pv/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites) * customers.data.pv_system_size[0],
-                    -customers.data.active_power]).max(level=0)
-
-
-def disaggregation_single_known_pvs_with_temperature_algorithm(customers,data_weather,customers_known_pv,datetimes):
-    
-    weather = copy(data_weather['Loc1'])
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
-
-
-    pv_iter0 = copy(customers.data.active_power)
-    pv_iter0[pv_iter0 > 0 ] = 0 
-    pv_iter0 = -pv_iter0
-    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
-    weather_input = weather_input.drop(set_diff)
-
-
-    pv_dis = disaggregation_single_known_pvs_with_temperature_opt(customers,customers_known_pv,datetimes,pv_iter0)
-    load_dis = customers.data.active_power + pv_dis
-
-    iteration = 0
-    pv_dis_iter = copy(pv_dis*0)
-
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
-        
-        iteration += 1
-        pv_dis_iter = copy(pv_dis)
-        print(iteration)
-        
-        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
-        regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customers.data.index)
-        pv_dis = disaggregation_single_known_pvs_with_temperature_opt(customers,customers_known_pv,datetimes,load_dis - customers.data.active_power)
-        load_dis = customers.data.active_power + pv_dis
-
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
-
-
-def disaggregation_single_known_pvs_with_temperature_algorithm_for_parallel(customers,datetimes):
-    
-    weather = copy(shared_weather_data['Loc1'])
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
-
-
-    pv_iter0 = copy(customers.data.active_power)
-    pv_iter0[pv_iter0 > 0 ] = 0 
-    pv_iter0 = -pv_iter0
-    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
-    weather_input = weather_input.drop(set_diff)
-
-
-    pv_dis = disaggregation_single_known_pvs_with_temperature_opt(customers,shared_data_known_pv,datetimes,pv_iter0)
-    
-    print(f'customer_ID: {customers.nmi} begin')
-    load_dis = customers.data.active_power + pv_dis
-
-    iteration = 0
-    pv_dis_iter = copy(pv_dis*0)
-
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
-        
-        iteration += 1
-        pv_dis_iter = copy(pv_dis)
-        # print(iteration)
-        
-        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
-        regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customers.data.index)
-        pv_dis = disaggregation_single_known_pvs_with_temperature_opt(customers,shared_data_known_pv,datetimes,load_dis - customers.data.active_power)
-        load_dis = customers.data.active_power + pv_dis
-
-    print(f'customer_ID: {customers.nmi} done!')
-
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
-
-
-def pool_executor_parallel_knownPVS_temperature(function_name,repeat_iter,input_features,data_weather,customers_known_pv,datetimes):
-    
-    global shared_data_known_pv
-    global shared_weather_data
-
-    shared_data_known_pv = copy(customers_known_pv)
-    shared_weather_data = copy(data_weather)
-
-    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,repeat_iter,repeat(datetimes)))  
-    return results
-
-
-def Generate_disaggregation_using_knownPVS_temprature_all(customers,input_features,data_weather,customers_known_pv,datetimes):
-
-
-    global shared_data_known_pv
-    global shared_weather_data
-
-    predictions_prallel = pool_executor_parallel_knownPVS_temperature(disaggregation_single_known_pvs_with_temperature_algorithm_for_parallel,customers.values(),input_features,data_weather,customers_known_pv,datetimes)
-    
-    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
-
-    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
-
-    if 'shared_data_known_pv' in globals():
-        del(shared_data_known_pv)
-    if 'shared_weather_data' in globals():
-        del(shared_weather_data)
-
-
-    return(predictions_output)
-
-
-def Disaggregation_no_PV_houses_single_time(time_step,data,customers_with_pv,customers_without_pv,datetimes):
+# # ================================================================
+# # Technique 3: Same Irradiance and Houses Without PV Installation
+# # ================================================================
+def SDD_Same_Irrad_no_PV_houses_single_time(time_step,data,customers_with_pv,customers_without_pv,datetimes):
     
     t = time_step
 
@@ -929,7 +690,7 @@ def pool_executor_parallel_time_no_PV_houses(function_name,repeat_iter,customers
     return results
 
 
-def disaggregation_optimisation_no_PV_houses(data,input_features,datetimes,customers_with_pv,customers_without_pv):
+def SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,datetimes,customers_with_pv,customers_without_pv):
 
     """
     Generate_disaggregation_optimisation()
@@ -940,7 +701,7 @@ def disaggregation_optimisation_no_PV_houses(data,input_features,datetimes,custo
 
     global shared_data_disaggregation_optimisation_no_PV
 
-    predictions_prallel = pool_executor_parallel_time_no_PV_houses(Disaggregation_no_PV_houses_single_time_for_parallel,range(0,len(datetimes)),customers_with_pv,customers_without_pv,datetimes,data,input_features)
+    predictions_prallel = pool_executor_parallel_time_no_PV_houses(SDD_Same_Irrad_no_PV_houses_single_time_for_parallel,range(0,len(datetimes)),customers_with_pv,customers_without_pv,datetimes,data,input_features)
     
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -954,7 +715,7 @@ def disaggregation_optimisation_no_PV_houses(data,input_features,datetimes,custo
     return predictions_prallel
 
 
-def Disaggregation_no_PV_houses_single_time_for_parallel(time_step,customers_with_pv,customers_without_pv,datetimes):
+def SDD_Same_Irrad_no_PV_houses_single_time_for_parallel(time_step,customers_with_pv,customers_without_pv,datetimes):
 
     t = time_step
 
@@ -1000,6 +761,388 @@ def Disaggregation_no_PV_houses_single_time_for_parallel(time_step,customers_wit
     return result_output
 
 
+# # ================================================================
+# # Technique 4: Constant Power Factor Demand
+# # ================================================================
+
+def SDD_constant_PF_single_node(customer,input_features):
+
+    customer.Generate_disaggregation_using_reactive()
+
+    result = pd.DataFrame(customer.data.pv_disagg)
+    result['demand_disagg'] = customer.data.demand_disagg
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return(result)
+
+def SDD_constant_PF_mutiple_nodes(customers,input_features):
+
+    predictions_prallel = pool_executor_parallel(SDD_constant_PF_single_node,customers.values(),input_features)
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return(predictions_prallel)
+
+
+# # ================================================================
+# # Technique 5: Measurements from Neighbouring Sites
+# # ================================================================
+def SDD_known_pvs_single_node(customer,customers_known_pv,datetimes):
+
+    model=ConcreteModel()
+    known_pv_nmis = list(customers_known_pv.keys())
+    model.pv_cites = Set(initialize=known_pv_nmis)
+    model.Time = Set(initialize=range(0,len(datetimes)))
+    model.weight = Var(model.pv_cites, bounds=(0,1))
+
+    # # Constraints
+    def LoadBalance(model):
+        return sum(model.weight[i] for i in model.pv_cites) == 1 
+    model.cons = Constraint(rule=LoadBalance)
+
+    # Objective
+    def Objrule(model):
+        return  sum(
+        ( sum(model.weight[i] * customers_known_pv[i].data.pv[datetimes[t]]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites)
+                - max(-customer.data.active_power[datetimes[t]],0)/customer.data.pv_system_size[0]
+        )**2 for t in model.Time)
+
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+     
+    pv_dis = pd.concat([sum(model.weight[i].value * customers_known_pv[i].data.pv/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites) * customer.data.pv_system_size[0],
+                    -customer.data.active_power]).max(level=0)
+    
+    load_dis = customer.data.active_power + pv_dis
+
+    return  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+def SDD_known_pvs_single_node_for_parallel(customer,datetimes):
+
+    print(f'customer_ID: {customer.nmi} begin')
+
+    model=ConcreteModel()
+    known_pv_nmis = list(customers_known_pv_shared.keys())
+    model.pv_cites = Set(initialize=known_pv_nmis)
+    model.Time = Set(initialize=range(0,len(datetimes)))
+    model.weight = Var(model.pv_cites, bounds=(0,1))
+
+    # # Constraints
+    def LoadBalance(model):
+        return sum(model.weight[i] for i in model.pv_cites) == 1 
+    model.cons = Constraint(rule=LoadBalance)
+
+    # Objective
+    def Objrule(model):
+        return  sum(
+        ( sum(model.weight[i] * customers_known_pv_shared[i].data.pv[datetimes[t]]/customers_known_pv_shared[i].data.pv_system_size[0] for i in model.pv_cites)
+                - max(-customer.data.active_power[datetimes[t]],0)/customer.data.pv_system_size[0]
+        )**2 for t in model.Time)
+
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+     
+    pv_dis = pd.concat([sum(model.weight[i].value * customers_known_pv_shared[i].data.pv/customers_known_pv_shared[i].data.pv_system_size[0] for i in model.pv_cites) * customer.data.pv_system_size[0],
+                    -customer.data.active_power]).max(level=0)
+    
+    load_dis = customer.data.active_power + pv_dis
+
+    return  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+
+
+def pool_executor_parallel_knownPVS(function_name,repeat_iter,input_features,customers_known_pv,datetimes):
+    
+    global customers_known_pv_shared
+
+    customers_known_pv_shared = copy(customers_known_pv)
+
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter,repeat(datetimes)))  
+    return results
+
+
+def SDD_known_pvs_multiple_nodes(customers,input_features,customers_known_pv,datetimes):
+
+
+    global customers_known_pv_shared
+
+    predictions_prallel = pool_executor_parallel_knownPVS(SDD_known_pvs_single_node_for_parallel,customers.values(),input_features,customers_known_pv,datetimes)
+    
+    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
+
+    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    if 'customers_known_pv_shared' in globals():
+        del(customers_known_pv_shared)
+
+    return(predictions_output)
+
+
+
+# # ================================================================
+# # Technique 6: Weather Data
+# # ================================================================
+def SDD_using_temp_single_node(customer,data_weather):
+    weather = copy(data_weather['Loc1'])
+    weather['minute'] = weather.index.minute
+    weather['hour'] = weather.index.hour
+    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
+    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
+    weather = copy(weather[weather.index < '2019-01-01'])
+    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
+    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+
+    pv_dis = copy(customer.data.active_power)
+    pv_dis[pv_dis > 0 ] = 0 
+    pv_dis = -pv_dis
+    set_diff = list( set(weather_input.index)-set( pv_dis.index) )
+    weather_input = weather_input.drop(set_diff)
+
+    load_dis = customer.data.active_power + pv_dis
+
+    iteration = 0
+    pv_dis_iter = copy(pv_dis*0)
+
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+
+        iteration += 1
+        pv_dis_iter = copy(pv_dis)
+        print(f'Iteration: {iteration}')
+
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr.fit(weather_input.values, load_dis.values)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis[load_dis < 0 ] = 0 
+        pv_dis = load_dis - customer.data.active_power
+
+    pv_dis[pv_dis < 0 ] = 0 
+    load_dis =  customer.data.active_power + pv_dis
+
+    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+def SDD_using_temp_single_node_for_parallel(customer):
+
+    print(f'customer_ID: {customer.nmi}')
+
+    weather = copy(shared_weather_data['Loc1'])
+    weather['minute'] = weather.index.minute
+    weather['hour'] = weather.index.hour
+    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
+    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
+    weather = copy(weather[weather.index < '2019-01-01'])
+    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
+    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+
+    pv_dis = copy(customer.data.active_power)
+    pv_dis[pv_dis > 0 ] = 0 
+    pv_dis = -pv_dis
+    set_diff = list( set(weather_input.index)-set( pv_dis.index) )
+    weather_input = weather_input.drop(set_diff)
+
+    load_dis = customer.data.active_power + pv_dis
+
+    iteration = 0
+    pv_dis_iter = copy(pv_dis*0)
+
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+
+        iteration += 1
+        pv_dis_iter = copy(pv_dis)
+
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr.fit(weather_input.values, load_dis.values)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis[load_dis < 0 ] = 0 
+        pv_dis = load_dis - customer.data.active_power
+
+    pv_dis[pv_dis < 0 ] = 0 
+    load_dis =  customer.data.active_power + pv_dis
+
+    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+def pool_executor_parallel_temperature(function_name,repeat_iter,input_features,data_weather):
+    
+    global shared_weather_data
+
+    shared_weather_data = copy(data_weather)
+
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter))  
+    return results
+
+def SDD_using_temp_multilple_nodes(customers,input_features,data_weather):
+
+    global shared_weather_data
+
+    predictions_prallel = pool_executor_parallel_temperature(SDD_using_temp_single_node_for_parallel,customers.values(),input_features,data_weather)
+    
+    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
+
+    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    if 'shared_weather_data' in globals():
+        del(shared_weather_data)
+
+
+    return(predictions_output)
+
+
+# # ================================================================
+# # Technique 7: Proxy Measurements from Neighbouring Sites and Weather Data
+# # ================================================================
+def SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter):
+    known_pv_nmis = list(customers_known_pv.keys())
+    model=ConcreteModel()
+    model.pv_cites = Set(initialize=known_pv_nmis)
+    model.Time = Set(initialize=range(0,len(datetimes)))
+    model.weight=Var(model.pv_cites, bounds=(0,1))
+
+    # # Constraints
+    def LoadBalance(model):
+        return sum(model.weight[i] for i in model.pv_cites) == 1 
+    model.cons = Constraint(rule=LoadBalance)
+
+    # Objective
+    def Objrule(model):
+        return  sum(
+                    (sum(model.weight[i] * customers_known_pv[i].data.pv[datetimes[t]]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites)
+                        - pv_iter[datetimes[t]]/customer.data.pv_system_size[0] )**2 for t in model.Time)
+
+    model.obj=Objective(rule=Objrule)
+
+    # # Solve the model
+    opt = SolverFactory('gurobi')
+    opt.solve(model)
+    
+    return pd.concat([sum(model.weight[i].value * customers_known_pv[i].data.pv/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites) * customer.data.pv_system_size[0],
+                    -customer.data.active_power]).max(level=0)
+
+def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_known_pv,datetimes):
+    
+    weather = copy(data_weather['Loc1'])
+    weather['minute'] = weather.index.minute
+    weather['hour'] = weather.index.hour
+    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
+    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
+    weather = copy(weather[weather.index < '2019-01-01'])
+    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
+    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+
+
+    pv_iter0 = copy(customer.data.active_power)
+    pv_iter0[pv_iter0 > 0 ] = 0 
+    pv_iter0 = -pv_iter0
+    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
+    weather_input = weather_input.drop(set_diff)
+
+
+    pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter0)
+    load_dis = customer.data.active_power + pv_dis
+
+    iteration = 0
+    pv_dis_iter = copy(pv_dis*0)
+
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+        
+        iteration += 1
+        pv_dis_iter = copy(pv_dis)
+        print(f'Iteration: {iteration}')
+        
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr.fit(weather_input.values, load_dis.values)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,load_dis - customer.data.active_power)
+        load_dis = customer.data.active_power + pv_dis
+
+    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+
+def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
+    
+    weather = copy(shared_weather_data['Loc1'])
+    weather['minute'] = weather.index.minute
+    weather['hour'] = weather.index.hour
+    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
+    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
+    weather = copy(weather[weather.index < '2019-01-01'])
+    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
+    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+
+    pv_iter0 = copy(customer.data.active_power)
+    pv_iter0[pv_iter0 > 0 ] = 0 
+    pv_iter0 = -pv_iter0
+    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
+    weather_input = weather_input.drop(set_diff)
+
+
+    pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,pv_iter0)
+    
+    print(f'customer_ID: {customer.nmi} begin')
+    load_dis = customer.data.active_power + pv_dis
+
+    iteration = 0
+    pv_dis_iter = copy(pv_dis*0)
+
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+        
+        iteration += 1
+        pv_dis_iter = copy(pv_dis)
+        # print(iteration)
+        
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr.fit(weather_input.values, load_dis.values)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,load_dis - customer.data.active_power)
+        load_dis = customer.data.active_power + pv_dis
+
+    print(f'customer_ID: {customer.nmi} done!')
+
+    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+
+
+def pool_executor_parallel_known_pvs_temp(function_name,repeat_iter,input_features,data_weather,customers_known_pv,datetimes):
+    
+    global shared_data_known_pv
+    global shared_weather_data
+
+    shared_data_known_pv = copy(customers_known_pv)
+    shared_weather_data = copy(data_weather)
+
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter,repeat(datetimes)))  
+    return results
+
+
+def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_weather,customers_known_pv,datetimes):
+
+    global shared_data_known_pv
+    global shared_weather_data
+
+    predictions_prallel = pool_executor_parallel_known_pvs_temp(SDD_known_pvs_temp_single_node_algorithm_for_parallel,customers.values(),input_features,data_weather,customers_known_pv,datetimes)
+    
+    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
+
+    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    if 'shared_data_known_pv' in globals():
+        del(shared_data_known_pv)
+    if 'shared_weather_data' in globals():
+        del(shared_weather_data)
+
+    return(predictions_output)
 
 
 
@@ -1032,3 +1175,103 @@ def Disaggregation_no_PV_houses_single_time_for_parallel(time_step,customers_wit
 # # from ReadData_init import input_features
 # [data, customers_nmi,customers_nmi_with_pv,datetimes, customers] = read_data(input_features)
 
+
+
+
+
+
+# # ================================================================
+# # To be tested techniques
+# # ================================================================
+
+
+### To be tested: This function uses the linear regression model which is built-in the sklearn librarry to find a linear relation between the PV system size and solar generation at each time step for all the nodes.
+### I think it should work almost exactly the same as technique 2 as it uses the same assumptions. But it requires more testing to be sure.
+# def Generate_disaggregation_regression(customers,customers_nmi,customers_nmi_with_pv,datetimes):
+
+#     """
+#     Generate_disaggregation_regression(customers)
+    
+#     This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
+#     Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
+#     is summation all electricity usage and generation that happens behind the meter. 
+#     """
+
+#     pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
+#                             np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
+#                             ).coef_[0]   for t in range(0,len(datetimes))]
+
+#     for i in customers_nmi_with_pv:
+#         customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+#         customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
+
+#     for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
+#         customers[i].data['pv_disagg'] = 0
+#         customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
+
+
+### To be tested 
+# def Forecast_using_disaggregation(data,input_features,datetimes,customers_nmi_with_pv,customers_nmi,customers):
+
+#     """
+#     Forecast_using_disaggregation(customers_nmi,input_features)
+
+#     This function is used to generate forecast values. It first disaggregates the demand and generation for all nmi using function
+#     Generate_disaggregation_optimisation (technique 2). It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
+#     and returns an aggregated forecast for all nmis in pandas.Dataframe format.
+#     """
+    
+#     opt_disaggregate = disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with_pv)
+
+#     for i in customers_nmi_with_pv:
+#         customers[i].data['pv_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
+#         customers[i].data['demand_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
+
+#     for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
+#         customers[i].data['pv_disagg'] = 0
+#         customers[i].data['demand_disagg'] = customers[i].data.active_power.values
+
+
+#     input_features_copy = copy(input_features)
+#     input_features_copy['Forecasted_param']= 'pv_disagg'
+#     predictions_output_pv = forecast_pointbased(customers,input_features_copy)
+
+#     input_features_copy['Forecasted_param']= 'demand_disagg'
+#     predictions_output_demand = forecast_pointbased(customers,input_features_copy)
+
+#     predictions_agg = predictions_output_demand + predictions_output_pv
+
+#     return(predictions_agg)
+
+
+
+#### Approach to be tested
+# def disaggregation_single_known_pvs_pos_pv(nmi,known_pv_nmis,customers,datetimes):
+
+#     model=ConcreteModel()
+#     model.pv_cites = Set(initialize=known_pv_nmis)
+#     model.Time = Set(initialize=range(0,len(datetimes)))
+#     model.weight=Var(model.pv_cites, bounds=(0,1))
+#     model.irrid=Var(range(0,len(datetimes)),bounds=(0,1))
+
+#     # # Constraints
+#     def LoadBalance(model):
+#         return sum(model.weight[i] for i in model.pv_cites) == 1 
+#     model.cons = Constraint(rule=LoadBalance)
+
+#     def pv_irrid(model,t):
+#         return model.irrid[t] == sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
+#     model.cons_pv = Constraint(model.Time,rule=pv_irrid)
+
+#     # Objective
+#     def Objrule(model):
+#         return  sum( (model.irrid[t] - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0] )**2
+#                       for t in model.Time)
+
+#     model.obj=Objective(rule=Objrule)
+
+#     # # Solve the model
+#     opt = SolverFactory('gurobi')
+#     opt.solve(model)
+
+#     return pd.Series([model.irrid[t].value * customers[nmi].data.pv_system_size[0] for t in model.Time],index=customers[nmi].data.index)
