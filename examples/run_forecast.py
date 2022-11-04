@@ -43,7 +43,7 @@ input_features = {  'file_type': 'NextGen',
 #                      }
 
 # Import the required libraries
-from load_forecasting_functions import read_data,forecast_pointbased_single_node,forecast_pointbased_multiple_nodes,forecast_inetervalbased_single_node,forecast_inetervalbased_multiple_nodes
+from converge_load_forecasting import read_data,forecast_pointbased_single_node,forecast_pointbased_multiple_nodes,forecast_inetervalbased_single_node,forecast_inetervalbased_multiple_nodes
 from more_itertools import take
 import pandas as pd
 
@@ -95,11 +95,11 @@ res4 = forecast_inetervalbased_multiple_nodes(n_customers,input_features)
 print('forecast_inetervalbased_multiple_nodes is done!')  
 
 # # Export the results into a json file
-# from load_forecasting_functions import export_interval_result_to_json
+# from converge_load_forecasting import export_interval_result_to_json
 # export_interval_result_to_json(res4)
 
 # # To read the result from the json file run the following function
-# from load_forecasting_functions import read_json_interval
+# from converge_load_forecasting import read_json_interval
 # filename = "prediction_interval_based.json"
 # loaded_predictions_output = read_json_interval(filename)
 

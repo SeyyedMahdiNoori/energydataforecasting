@@ -8,8 +8,8 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from load_forecasting_functions import read_data
-from load_forecasting_functions import SDD_min_solar_single_node,SDD_Same_Irrad_multiple_times,SDD_Same_Irrad_no_PV_houses_multiple_times,SDD_constant_PF_single_node,SDD_known_pvs_single_node,SDD_using_temp_single_node,SDD_known_pvs_temp_single_node_algorithm
+from converge_load_forecasting import read_data
+from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_multiple_times,SDD_Same_Irrad_no_PV_houses_multiple_times,SDD_constant_PF_single_node,SDD_known_pvs_single_node,SDD_using_temp_single_node,SDD_known_pvs_temp_single_node_algorithm
 
 # input_features = {  'file_type': 'Converge',
 #                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',

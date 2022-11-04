@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from load_forecasting_functions import read_data
+from converge_load_forecasting import read_data
 
 # # Set features of the predections
 # input_features = {  'file_type': 'NextGen',
