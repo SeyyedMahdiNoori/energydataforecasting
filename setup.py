@@ -13,7 +13,7 @@ setup(
         'multiprocess',
         'pandas',
         'pyomo',
-        'skforecast=0.4.2',
+        'skforecast==0.4.2',
         'sklearn'
     ],
     scripts=[
