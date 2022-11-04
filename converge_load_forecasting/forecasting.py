@@ -30,7 +30,7 @@ from copy import deepcopy as copy
 import warnings
 warnings.filterwarnings('ignore')
 
-# from ReadData_init import input_features,customers_nmi,customers_nmi_with_pv,datetimes, customers
+# from read_data_init import input_features,customers_nmi,customers_nmi_with_pv,datetimes, customers
 
 
 
@@ -154,9 +154,9 @@ def read_data(input_features):
                         'Loc3': data_weather2,  }
 
 
-    global customers_class
+    global Customers
 
-    class customers_class:
+    class Customers:
         
         num_of_customers = 0
 
@@ -165,18 +165,18 @@ def read_data(input_features):
             self.nmi = nmi      # store nmi in each object              
             self.data = data.loc[self.nmi]      # store data in each object         
 
-            customers_class.num_of_customers += 1
+            Customers.num_of_customers += 1
 
-        def Generate_forecaster_object(self,input_features):
+        def generate_forecaster(self,input_features):
             
             """
-            Generate_forecaster_object(self,input_features)
+            generate_forecaster(self,input_features)
             
             This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
             It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
             have different objective can be used with the same parameters.
             
-            input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
             # Create a forecasting object
@@ -188,17 +188,17 @@ def read_data(input_features):
             # Train the forecaster using the train data
             self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
-        def Generate_optimised_forecaster_object(self,input_features):
+        def generate_optimised_forecaster_object(self,input_features):
             
             """
-            Generate_optimised_forecaster_object(self,input_features)
+            generate_optimised_forecaster_object(self,input_features)
             
             This function generates a forecaster object for each \textit{nmi} to be used for a recursive multi-step forecasting method.
             It builds on function Generate\_forecaster\_object by combining grid search strategy with backtesting to identify the combination of lags 
             and hyperparameters that achieve the best prediction performance. As default, it is based on a linear least squares with \textit{l2} regularisation method. 
             Alternatively, it can use LinearRegression() and Lasso() methods to generate the forecaster object.
 
-            input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
             # This line is used to hide the bar in the optimisation process
@@ -230,36 +230,36 @@ def read_data(input_features):
                     )
             
 
-        def Generate_prediction(self,input_features):
+        def generate_prediction(self,input_features):
             """
-            Generate_prediction(self,input_features)
+            generate_prediction(self,input_features)
             
             This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
             
-            input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
             
-            Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(Newindex)
+            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
-        def Generate_interval_prediction(self,input_features):
+        def generate_interval_prediction(self,input_features):
             """
-            Generate_interval_prediction(self,input_features)
+            generate_interval_prediction(self,input_features)
             
             This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
             The confidence level can be set in the function parameters as "interval = [10, 90]".
         
-            input_features is a dictionary. To find an example of its format refer to the ReadData.py file
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
             # Create a time-index for the dates that are being predicted
-            Newindex = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
             
             # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-            self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(Newindex)
+            self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(new_index)
 
 
-        def Generate_disaggregation_using_reactive(self):
+        def generate_disaggregation_using_reactive(self):
 
             QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
             QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
@@ -287,7 +287,7 @@ def read_data(input_features):
             self.data['pv_disagg'] =  - S
             self.data['demand_disagg'] = D
 
-    customers = {customer: customers_class(customer,input_features) for customer in customers_nmi}
+    customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
 
     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
 
@@ -320,17 +320,17 @@ def forecast_pointbased_single_node(customer,input_features):
     run_prallel_forecast_pointbased(customers_nmi,input_features)
 
     This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
     """
     
     # print(customers)
     print(" Customer nmi: {first}".format(first = customer.nmi))
 
     # Train a forecasting object
-    customer.Generate_forecaster_object(input_features)
+    customer.generate_forecaster(input_features)
     
     # Generate predictions 
-    customer.Generate_prediction(input_features)
+    customer.generate_prediction(input_features)
 
     return customer.predictions.rename(columns={'pred': customer.nmi})
 
@@ -354,17 +354,17 @@ def forecast_inetervalbased_single_node(customer,input_features):
     run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
 
     This functions (along with function pool_executor_forecast_interval) are used to parallelised forecast_interval() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
     """
 
     print(" Customer nmi: {first}".format(first = customer.nmi))
 
 
     # Train a forecasting object
-    customer.Generate_forecaster_object(input_features)
+    customer.generate_forecaster(input_features)
     
     # Generate interval predictions 
-    customer.Generate_interval_prediction(input_features)
+    customer.generate_interval_prediction(input_features)
     
     return customer.interval_predictions
 
@@ -376,17 +376,17 @@ def forecast_inetervalbased_single_node_for_parallel(customer,input_features):
     run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
 
     This functions (along with function pool_executor_forecast_interval) are used to parallelised forecast_interval() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
     """
 
     print(" Customer nmi: {first}".format(first = customer.nmi))
 
 
     # Train a forecasting object
-    customer.Generate_forecaster_object(input_features)
+    customer.generate_forecaster(input_features)
     
     # Generate interval predictions 
-    customer.Generate_interval_prediction(input_features)
+    customer.generate_interval_prediction(input_features)
     
     return customer.interval_predictions.rename(columns={'pred': customer.nmi})
 
@@ -400,7 +400,7 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
     This function generates prediction values for all the nmis using a recursive multi-step probabilistic forecasting method. It uses function pool_executor_forecast_interval to generate
     the predictions for each nmi parallely (each on a separate core). This function accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the ReadData.py file.
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
 
     This function return the forecasted values for the lower bound, upper bound and the most likely values of the desired parameter specified in the input_feature['Forecasted_param'] for the dates specified in the input_feature dictionary for 
     all the nmis in pandas.Dataframe format.
@@ -511,14 +511,14 @@ def SDD_Same_Irrad_single_time(time_step,customers_nmi_with_pv,datetimes,data_on
     model.penalty_n=Var(model.Time,customers_nmi_with_pv,within=NonNegativeReals)
 
     # # Constraints
-    def LoadBalance(model,t,i):
+    def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i] 
-    model.cons = Constraint(model.Time,customers_nmi_with_pv,rule=LoadBalance)
+    model.cons = Constraint(model.Time,customers_nmi_with_pv,rule=load_balance)
 
     # # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return sum(model.pv[t] for t in model.Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in customers_nmi_with_pv ) for t in model.Time)
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -545,7 +545,7 @@ def SDD_Same_Irrad_single_time(time_step,customers_nmi_with_pv,datetimes,data_on
 def SDD_Same_Irrad_for_parallel(time_step,customers_nmi_with_pv,datetimes):
 
     """
-    Demand_disaggregation(t,customers_nmi_with_pv,customers), where t is the time-step of the disaggregation.
+    disaggregate_demand(t,customers_nmi_with_pv,customers), where t is the time-step of the disaggregation.
     
     This function disaggregates the demand and generation for all the nodes in the system at time-step t. 
 
@@ -569,14 +569,14 @@ def SDD_Same_Irrad_for_parallel(time_step,customers_nmi_with_pv,datetimes):
     model.penalty_n=Var(model.Time,customers_nmi_with_pv,within=NonNegativeReals)
 
     # # Constraints
-    def LoadBalance(model,t,i):
+    def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]] + model.penalty_p[t,i] - model.penalty_n[t,i] 
-    model.cons = Constraint(model.Time,customers_nmi_with_pv,rule=LoadBalance)
+    model.cons = Constraint(model.Time,customers_nmi_with_pv,rule=load_balance)
 
     # # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return sum(model.pv[t] for t in model.Time) + 10000 * sum( sum( model.penalty_p[t,i] + model.penalty_n[t,i] for i in customers_nmi_with_pv ) for t in model.Time)
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -649,16 +649,16 @@ def SDD_Same_Irrad_no_PV_houses_single_time(time_step,data,customers_with_pv,cus
     model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
 
     # # Constraints
-    def LoadBalance(model,t,i):
+    def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
-    model.cons = Constraint(model.Time,customers_with_pv,rule=LoadBalance)
+    model.cons = Constraint(model.Time,customers_with_pv,rule=load_balance)
 
     # # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
                 + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
                 )
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -730,16 +730,16 @@ def SDD_Same_Irrad_no_PV_houses_single_time_for_parallel(time_step,customers_wit
     model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
 
     # # Constraints
-    def LoadBalance(model,t,i):
+    def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
-    model.cons = Constraint(model.Time,customers_with_pv,rule=LoadBalance)
+    model.cons = Constraint(model.Time,customers_with_pv,rule=load_balance)
 
     # # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
                 + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
                 )
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -767,7 +767,7 @@ def SDD_Same_Irrad_no_PV_houses_single_time_for_parallel(time_step,customers_wit
 
 def SDD_constant_PF_single_node(customer,input_features):
 
-    customer.Generate_disaggregation_using_reactive()
+    customer.generate_disaggregation_using_reactive()
 
     result = pd.DataFrame(customer.data.pv_disagg)
     result['demand_disagg'] = customer.data.demand_disagg
@@ -798,18 +798,18 @@ def SDD_known_pvs_single_node(customer,customers_known_pv,datetimes):
     model.weight = Var(model.pv_cites, bounds=(0,1))
 
     # # Constraints
-    def LoadBalance(model):
+    def load_balance(model):
         return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
+    model.cons = Constraint(rule=load_balance)
 
     # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return  sum(
         ( sum(model.weight[i] * customers_known_pv[i].data.pv[datetimes[t]]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites)
                 - max(-customer.data.active_power[datetimes[t]],0)/customer.data.pv_system_size[0]
         )**2 for t in model.Time)
 
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -833,18 +833,18 @@ def SDD_known_pvs_single_node_for_parallel(customer,datetimes):
     model.weight = Var(model.pv_cites, bounds=(0,1))
 
     # # Constraints
-    def LoadBalance(model):
+    def load_balance(model):
         return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
+    model.cons = Constraint(rule=load_balance)
 
     # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return  sum(
         ( sum(model.weight[i] * customers_known_pv_shared[i].data.pv[datetimes[t]]/customers_known_pv_shared[i].data.pv_system_size[0] for i in model.pv_cites)
                 - max(-customer.data.active_power[datetimes[t]],0)/customer.data.pv_system_size[0]
         )**2 for t in model.Time)
 
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -1009,17 +1009,17 @@ def SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter
     model.weight=Var(model.pv_cites, bounds=(0,1))
 
     # # Constraints
-    def LoadBalance(model):
+    def load_balance(model):
         return sum(model.weight[i] for i in model.pv_cites) == 1 
-    model.cons = Constraint(rule=LoadBalance)
+    model.cons = Constraint(rule=load_balance)
 
     # Objective
-    def Objrule(model):
+    def obj_rule(model):
         return  sum(
                     (sum(model.weight[i] * customers_known_pv[i].data.pv[datetimes[t]]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites)
                         - pv_iter[datetimes[t]]/customer.data.pv_system_size[0] )**2 for t in model.Time)
 
-    model.obj=Objective(rule=Objrule)
+    model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
     opt = SolverFactory('gurobi')
@@ -1172,7 +1172,7 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 #                     'data_freq' : '5T',
 #                     'core_usage': 6      }  
 
-# # from ReadData_init import input_features
+# # from read_data_init import input_features
 # [data, customers_nmi,customers_nmi_with_pv,datetimes, customers] = read_data(input_features)
 
 
@@ -1187,10 +1187,10 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 
 ### To be tested: This function uses the linear regression model which is built-in the sklearn librarry to find a linear relation between the PV system size and solar generation at each time step for all the nodes.
 ### I think it should work almost exactly the same as technique 2 as it uses the same assumptions. But it requires more testing to be sure.
-# def Generate_disaggregation_regression(customers,customers_nmi,customers_nmi_with_pv,datetimes):
+# def generate_disaggregation_regression(customers,customers_nmi,customers_nmi_with_pv,datetimes):
 
 #     """
-#     Generate_disaggregation_regression(customers)
+#     generate_disaggregation_regression(customers)
     
 #     This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
 #     Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
@@ -1255,20 +1255,20 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 #     model.irrid=Var(range(0,len(datetimes)),bounds=(0,1))
 
 #     # # Constraints
-#     def LoadBalance(model):
+#     def load_balance(model):
 #         return sum(model.weight[i] for i in model.pv_cites) == 1 
-#     model.cons = Constraint(rule=LoadBalance)
+#     model.cons = Constraint(rule=load_balance)
 
 #     def pv_irrid(model,t):
 #         return model.irrid[t] == sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
 #     model.cons_pv = Constraint(model.Time,rule=pv_irrid)
 
 #     # Objective
-#     def Objrule(model):
+#     def obj_rule(model):
 #         return  sum( (model.irrid[t] - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0] )**2
 #                       for t in model.Time)
 
-#     model.obj=Objective(rule=Objrule)
+#     model.obj=Objective(rule=obj_rule)
 
 #     # # Solve the model
 #     opt = SolverFactory('gurobi')

@@ -148,8 +148,8 @@ plt.show()
 # Plot Predition vs Real data using point-based approach
 # ==============================================================================
 
-customers[nmi].Generate_forecaster_object(input_features)
-customers[nmi].Generate_prediction(input_features)
+customers[nmi].generate_forecaster(input_features)
+customers[nmi].generate_prediction(input_features)
 predictions= customers[nmi].predictions
 fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
@@ -165,12 +165,12 @@ plt.show()
 # Plot Predition vs Real data using point-based approach with and without forecaster optimiser
 # ==============================================================================
 
-customers[nmi].Generate_forecaster_object(input_features)
-customers[nmi].Generate_prediction(input_features)
+customers[nmi].generate_forecaster(input_features)
+customers[nmi].generate_prediction(input_features)
 predictions= customers[nmi].predictions
 
-customers[nmi].Generate_optimised_forecaster_object(input_features)
-customers[nmi].Generate_prediction(input_features)
+customers[nmi].generate_optimised_forecaster_object(input_features)
+customers[nmi].generate_prediction(input_features)
 predictions_optimised= customers[nmi].predictions
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
@@ -195,8 +195,8 @@ plt.show()
 # # ==============================================================================
 import matplotlib.ticker as ticker
 
-customers[nmi].Generate_forecaster_object(input_features)
-customers[nmi].Generate_interval_prediction(input_features)
+customers[nmi].generate_forecaster(input_features)
+customers[nmi].generate_interval_prediction(input_features)
 predictions_interval= customers[nmi].interval_predictions
 
 fig, ax=plt.subplots(figsize=(11, 4.5))
@@ -221,22 +221,22 @@ plt.show()
 
 # # Plot Predition vs Real data using point-based approach
 # # ==============================================================================
-# from Load_Forecasting import Generate_disaggregation_regression
-# Generate_disaggregation_regression()
+# from Load_Forecasting import generate_disaggregation_regression
+# generate_disaggregation_regression()
 
-# customers[nmi].Generate_forecaster_object(input_features)
-# customers[nmi].Generate_prediction(input_features)
+# customers[nmi].generate_forecaster(input_features)
+# customers[nmi].generate_prediction(input_features)
 # predictions= customers[nmi].predictions
 
 # input_features1 = copy.deepcopy(input_features)
 # input_features1['Forecasted_param']= 'pv_disagg'
-# customers[nmi].Generate_forecaster_object(input_features1)
-# customers[nmi].Generate_prediction(input_features1)
+# customers[nmi].generate_forecaster(input_features1)
+# customers[nmi].generate_prediction(input_features1)
 # predictions_pv = customers[nmi].predictions
 
 # input_features1['Forecasted_param']= 'demand_disagg'
-# customers[nmi].Generate_forecaster_object(input_features1)
-# customers[nmi].Generate_prediction(input_features1)
+# customers[nmi].generate_forecaster(input_features1)
+# customers[nmi].generate_prediction(input_features1)
 # predictions_demand = customers[nmi].predictions
 
 # predictions_agg = predictions_demand + predictions_pv
