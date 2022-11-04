@@ -38,7 +38,7 @@ def read_data(input_features):
     if input_features['file_type'] == 'Converge':
 
         # Read data
-        data = pd.read_csv(input_features['file_name'])
+        data = pd.read_csv(input_features['data_path'])
 
         # # ###### Pre-process the data ######
 
@@ -69,7 +69,7 @@ def read_data(input_features):
         # Add PV instalation and size, and load type to the data from nmi.csv file
         # ==============================================================================
         # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
-        data_nmi = pd.read_csv(input_features['nmi_type_name'])
+        data_nmi = pd.read_csv(input_features['nmi_type_path'])
         data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
         import itertools
@@ -94,7 +94,7 @@ def read_data(input_features):
         # data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
 
 
-        data = pd.read_csv(input_features['file_name'])
+        data = pd.read_csv(input_features['file_path'])
         # data = data[~data.index.duplicated(keep='first')]
         data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
         
@@ -112,7 +112,7 @@ def read_data(input_features):
         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
         ##### Read 5-minute weather data from SolCast for three locations
-        data_weather0 = pd.read_csv('-35.048_149.124417_Solcast_PT5M.csv')
+        data_weather0 = pd.read_csv(input_features['weather_data1_path'])
         data_weather0['PeriodStart'] = pd.to_datetime(data_weather0['PeriodStart'])
         data_weather0 = data_weather0.drop('PeriodEnd', axis=1)
         data_weather0 = data_weather0.rename(columns={"PeriodStart": "datetime"})
@@ -124,8 +124,8 @@ def read_data(input_features):
         # *** Temporary *** 
         filt = (data_weather0.index > '2018-01-01 23:59:00')
         data_weather0 = data_weather0.loc[filt].copy()
-
-        data_weather1 = pd.read_csv('-35.3075_149.124417_Solcast_PT5M.csv')
+        
+        data_weather1 = pd.read_csv(input_features['weather_data2_path'])
         data_weather1['PeriodStart'] = pd.to_datetime(data_weather1['PeriodStart'])
         data_weather1 = data_weather1.drop('PeriodEnd', axis=1)
         data_weather1 = data_weather1.rename(columns={"PeriodStart": "datetime"})
@@ -137,7 +137,7 @@ def read_data(input_features):
         filt = (data_weather1.index > '2018-01-01 23:59:00')
         data_weather1 = data_weather1.loc[filt].copy()
 
-        data_weather2 = pd.read_csv('-35.329911_149.215054_Solcast_PT5M.csv')
+        data_weather2 = pd.read_csv(input_features['weather_data3_path'])
         data_weather2['PeriodStart'] = pd.to_datetime(data_weather2['PeriodStart'])
         data_weather2 = data_weather2.drop('PeriodEnd', axis=1)
         data_weather2 = data_weather2.rename(columns={"PeriodStart": "datetime"})

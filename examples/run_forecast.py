@@ -30,8 +30,8 @@ input_features = {  'file_type': 'NextGen',
 
 # # Set features of the predections
 # input_features = {  'file_type': 'Converge',
-#                     'file_name': '_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_name': 'nmi.csv',
+#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
+#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
 #                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
 #                     'Start training': '2022-07-01',
 #                     'End training': '2022-07-27',

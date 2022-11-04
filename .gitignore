@@ -18,3 +18,7 @@ approacheTBA.py
 -35.329911_149.215054_Solcast_PT5M.csv
 test123.py
 NextGen.csv
+/converge_load_forecasting.egg-info
+development.py
+/converge_load_forecasting/__pycache__
+/data
