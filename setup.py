@@ -9,12 +9,15 @@ setup(
     author_email='mahdi.noori@anu.edu.au',
     packages=['converge_load_forecasting'],
     install_requires=[
+        'copy',
+        'matplotlib',
         'more_itertools',
         'multiprocess',
         'pandas',
         'pyomo',
         'skforecast==0.4.2',
-        'sklearn'
+        'sklearn',
+        'statsmodels'
     ],
     scripts=[
     ]
