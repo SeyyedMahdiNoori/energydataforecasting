@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from converge_load_forecasting import read_data
+from converge_load_forecasting import initialise
 from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_multiple_times,SDD_Same_Irrad_no_PV_houses_multiple_times,SDD_constant_PF_single_node,SDD_known_pvs_single_node,SDD_using_temp_single_node,SDD_known_pvs_temp_single_node_algorithm
 
 # input_features = {  'file_type': 'Converge',
@@ -24,21 +24,25 @@ from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_m
 #                     'core_usage': 8      
 #                      }
 
-input_features = {  'file_type': 'NextGen',
-                    'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
-                    'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
-                    'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
-                    'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
-                    'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-                    'Start training': '2018-01-01',
-                    'End training': '2018-02-01',
-                    'Last-observed-window': '2018-02-01',
-                    'Window size':  288,
-                    'Windows to be forecasted':    3,
-                    'data_freq' : '5T',
-                    'core_usage': 8      }  
+# input_features = {  'file_type': 'NextGen',
+#                     'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
+#                     'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
+#                     'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
+#                     'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2018-01-01',
+#                     'End training': '2018-02-01',
+#                     'Last-observed-window': '2018-02-01',
+#                     'Window size':  288,
+#                     'Windows to be forecasted':    3,
+#                     'data_freq' : '5T',
+#                     'core_usage': 8      }  
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers,data_weather = read_data(input_features)
 
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers,data_weather = read_data(input_features)
+path_data2 = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv'
+weatherdatapath2 = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_weather_data.csv'
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(path_data2,'active_power',weatherdatapath2)
+
 
 # Set this value to choose an nmi from customers_nmi 
 # Examples

@@ -8,7 +8,9 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from converge_load_forecasting import read_data
+from converge_load_forecasting import initialise
+
+
 
 # # Set features of the predections
 # input_features = {  'file_type': 'NextGen',
@@ -25,21 +27,21 @@ from converge_load_forecasting import read_data
 #                     'data_freq' : '5T',
 #                     'core_usage': 8      }  
 
-input_features = {  'file_type': 'Converge',
-                    'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
-                    'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
-                    'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-                    'Start training': '2022-07-01',
-                    'End training': '2022-07-27',
-                    'Last-observed-window': '2022-07-27',
-                    'Window size': 48 ,
-                    'Windows to be forecasted':    3,     
-                    'data_freq' : '30T',
-                    'core_usage': 8      
-                     }
+# input_features = {  'file_type': 'Converge',
+#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
+#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2022-07-01',
+#                     'End training': '2022-07-27',
+#                     'Last-observed-window': '2022-07-27',
+#                     'Window size': 48 ,
+#                     'Windows to be forecasted':    3,     
+#                     'data_freq' : '30T',
+#                     'core_usage': 8      
+#                      }
 
-
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather = read_data(input_features)
+path_data = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv'
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(path_data,'active_power')
 
 # Set this value to choose an nmi from customers_nmi 
 # Examples

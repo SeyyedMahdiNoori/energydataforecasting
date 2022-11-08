@@ -24,134 +24,103 @@ from tqdm import tqdm
 from functools import partialmethod
 import json
 from copy import deepcopy as copy
+import itertools
 
 # Warnings configuration
 # ==============================================================================
 import warnings
 warnings.filterwarnings('ignore')
 
-# from read_data_init import input_features,customers_nmi,customers_nmi_with_pv,datetimes, customers
 
 
 
-def read_data(input_features):
-    if input_features['file_type'] == 'Converge':
-
-        # Read data
-        data = pd.read_csv(input_features['data_path'])
-
-        # # ###### Pre-process the data ######
-
-        # format datetime to pandas datetime format
-        data['datetime'] = pd.to_datetime(data['datetime'])
-
-        # Add weekday column to the data
-        data['DayofWeek'] = data['datetime'].dt.day_name()
-
-        # Save customer nmis in a list
-        customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
-
-        # # *** Temporary *** the last day of the data (2022-07-31)
-        # # is very different from the rest, and is ommitted for now.
-        # filt = (data['datetime'] < '2022-07-31')
-        # data = data.loc[filt].copy()
-
-        # Make datetime index of the dataset
-        data.set_index(['nmi', 'datetime'], inplace=True)
-
-        # save unique dates of the data
-        datetimes = data.index.unique('datetime')
-
-        # To obtain the data for each nmi: --> data.loc[nmi]
-        # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
 
-        # Add PV instalation and size, and load type to the data from nmi.csv file
-        # ==============================================================================
-        # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
-        data_nmi = pd.read_csv(input_features['nmi_type_path'])
+def initialise(customersdatapath,Forecasted_param=1,weatherdatapath=1,start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1):
+
+    # Read data
+    data = pd.read_csv(customersdatapath)
+
+    # # ###### Pre-process the data ######
+
+    # format datetime to pandas datetime format
+    data['datetime'] = pd.to_datetime(data['datetime'])
+
+    # Add weekday column to the data
+    data['DayofWeek'] = data['datetime'].dt.day_name()
+
+    # Save customer nmis in a list
+    customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
+
+    # Make datetime index of the dataset
+    data.set_index(['nmi', 'datetime'], inplace=True)
+
+    # save unique dates of the data
+    datetimes = data.index.unique('datetime')
+
+    if weatherdatapath == 1:
+        data_weather = {}
+    else:
+        data_weather = pd.read_csv(weatherdatapath)
+        data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        data_weather.set_index('datetime', inplace=True)
+
+    input_features = {}
+
+    if Forecasted_param==1:
+        input_features['Forecasted_param'] = 'active_power'
+    else:
+        input_features['Forecasted_param'] = Forecasted_param
+
+
+    if start_training==1:
+        input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d")
+    else:
+        input_features['Start training'] = start_training
+
+    if end_training==1:
+        input_features['End training'] =  datetimes[-1].strftime("%Y-%m") + '-' + str(int(datetimes[-1].strftime("%d-%m-%Y")[0:2]) - 1) 
+    else:
+        input_features['End training'] = end_training
+
+    if end_training==1:
+        input_features['End training'] =  datetimes[-1].strftime("%Y-%m") + '-' + str(int(datetimes[-1].strftime("%d-%m-%Y")[0:2]) - 1)
+    else:
+        input_features['End training'] = end_training
+
+    if nmi_type_path==1:
+        customers_nmi_with_pv = copy(customers_nmi)
+    else:
+        input_features['nmi_type_path'] = nmi_type_path
+        data_nmi = pd.read_csv(nmi_type_path)
         data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
-        import itertools
         customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
         data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
         data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
         data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
 
-        # # This line is added to prevent the aggregated demand from being negative when there is not PV
-        # # Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
-        # # for i in customers_nmi:
-        # #     if data.loc[i].pv_system_size[0] == 0:
-        # #         data.at[i,'active_power'] = data.loc[i].active_power.abs()
+    if Last_observed_window==1:
+        input_features['Last-observed-window'] = input_features['End training']
+    else:
+        input_features['Last-observed-window'] = Last_observed_window
 
-        # # # TBA
-        data_weather = {}
-        
-    elif input_features['file_type'] == 'NextGen':
+    if window_size==1:
+        input_features['Window size'] = int(timedelta(days = 1) / (datetimes[1] - datetimes[0]))
+    else:
+        input_features['Window size'] = window_size
 
-        # with open(input_features['file_name'], 'rb') as handle:
-        #     data = pickle.load(handle)
-        # data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+    if windows_to_be_forecasted==1:
+        input_features['Windows to be forecasted'] = 1
+    else:
+        input_features['Windows to be forecasted'] = windows_to_be_forecasted
 
+    input_features['data_freq'] = datetimes[0:3].inferred_freq
 
-        data = pd.read_csv(input_features['file_path'])
-        # data = data[~data.index.duplicated(keep='first')]
-        data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
-        
-        # format datetime to pandas datetime format
-        data['datetime'] = pd.to_datetime(data['datetime'])
-        
-        # Make datetime index of the dataset
-        data.set_index(['nmi', 'datetime'], inplace=True)
-
-        datetimes = data.loc[data.index[0][0]].index
-        customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
-        customers_nmi_with_pv = copy(customers_nmi)
-
-        # To obtain the data for each nmi: --> data.loc[nmi]
-        # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
-
-        ##### Read 5-minute weather data from SolCast for three locations
-        data_weather0 = pd.read_csv(input_features['weather_data1_path'])
-        data_weather0['PeriodStart'] = pd.to_datetime(data_weather0['PeriodStart'])
-        data_weather0 = data_weather0.drop('PeriodEnd', axis=1)
-        data_weather0 = data_weather0.rename(columns={"PeriodStart": "datetime"})
-        data_weather0.set_index('datetime', inplace=True)
-        data_weather0.index = data_weather0.index.tz_convert('Australia/Sydney')
-        # data_weather0['isweekend'] = (data_weather0.index.day_of_week > 4).astype(int)
-        # data_weather0['Temp_EWMA'] = data_weather0.AirTemp.ewm(com=0.5).mean()
-        
-        # *** Temporary *** 
-        filt = (data_weather0.index > '2018-01-01 23:59:00')
-        data_weather0 = data_weather0.loc[filt].copy()
-        
-        data_weather1 = pd.read_csv(input_features['weather_data2_path'])
-        data_weather1['PeriodStart'] = pd.to_datetime(data_weather1['PeriodStart'])
-        data_weather1 = data_weather1.drop('PeriodEnd', axis=1)
-        data_weather1 = data_weather1.rename(columns={"PeriodStart": "datetime"})
-        data_weather1.set_index('datetime', inplace=True)
-        data_weather1.index = data_weather1.index.tz_convert('Australia/Sydney')
-
-
-        # *** Temporary *** 
-        filt = (data_weather1.index > '2018-01-01 23:59:00')
-        data_weather1 = data_weather1.loc[filt].copy()
-
-        data_weather2 = pd.read_csv(input_features['weather_data3_path'])
-        data_weather2['PeriodStart'] = pd.to_datetime(data_weather2['PeriodStart'])
-        data_weather2 = data_weather2.drop('PeriodEnd', axis=1)
-        data_weather2 = data_weather2.rename(columns={"PeriodStart": "datetime"})
-        data_weather2.set_index('datetime', inplace=True)
-        data_weather2.index = data_weather2.index.tz_convert('Australia/Sydney')
-
-
-        # *** Temporary *** 
-        filt = (data_weather2.index > '2018-01-01 23:59:00')
-        data_weather2 = data_weather2.loc[filt].copy()
-
-        data_weather = {'Loc1': data_weather0,
-                        'Loc2': data_weather1,
-                        'Loc3': data_weather2,  }
+    if core_usage==1:
+        input_features['core_usage'] = 8
+    else:
+        input_features['core_usage'] = core_usage
 
 
     global Customers
@@ -289,7 +258,8 @@ def read_data(input_features):
 
     customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
 
-    return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
+    return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features
+
 
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
@@ -1275,3 +1245,266 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 #     opt.solve(model)
 
 #     return pd.Series([model.irrid[t].value * customers[nmi].data.pv_system_size[0] for t in model.Time],index=customers[nmi].data.index)
+
+
+
+
+# # ================================================================
+# # Older read data function (saved here for backup)
+# # ================================================================
+# def read_data(input_features):
+#     if input_features['file_type'] == 'Converge':
+
+#         # Read data
+#         data = pd.read_csv(input_features['data_path'])
+
+#         # # ###### Pre-process the data ######
+
+#         # format datetime to pandas datetime format
+#         data['datetime'] = pd.to_datetime(data['datetime'])
+
+#         # Add weekday column to the data
+#         data['DayofWeek'] = data['datetime'].dt.day_name()
+
+#         # Save customer nmis in a list
+#         customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
+
+#         # # *** Temporary *** the last day of the data (2022-07-31)
+#         # # is very different from the rest, and is ommitted for now.
+#         # filt = (data['datetime'] < '2022-07-31')
+#         # data = data.loc[filt].copy()
+
+#         # Make datetime index of the dataset
+#         data.set_index(['nmi', 'datetime'], inplace=True)
+
+#         # save unique dates of the data
+#         datetimes = data.index.unique('datetime')
+
+#         # To obtain the data for each nmi: --> data.loc[nmi]
+#         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
+
+
+#         # Add PV instalation and size, and load type to the data from nmi.csv file
+#         # ==============================================================================
+#         # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
+#         data_nmi = pd.read_csv(input_features['nmi_type_path'])
+#         data_nmi.set_index(data_nmi['nmi'],inplace=True)
+
+#         import itertools
+#         customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
+#         data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
+#         data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
+#         data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
+
+#         # # This line is added to prevent the aggregated demand from being negative when there is not PV
+#         # # Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
+#         # # for i in customers_nmi:
+#         # #     if data.loc[i].pv_system_size[0] == 0:
+#         # #         data.at[i,'active_power'] = data.loc[i].active_power.abs()
+
+#         # # # TBA
+#         data_weather = {}
+        
+#     elif input_features['file_type'] == 'NextGen':
+
+#         # with open(input_features['file_name'], 'rb') as handle:
+#         #     data = pickle.load(handle)
+#         # data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+
+
+#         data = pd.read_csv(input_features['file_path'])
+#         # data = data[~data.index.duplicated(keep='first')]
+#         data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
+        
+#         # format datetime to pandas datetime format
+#         data['datetime'] = pd.to_datetime(data['datetime'])
+        
+#         # Make datetime index of the dataset
+#         data.set_index(['nmi', 'datetime'], inplace=True)
+
+#         datetimes = data.loc[data.index[0][0]].index
+#         customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
+#         customers_nmi_with_pv = copy(customers_nmi)
+
+#         # To obtain the data for each nmi: --> data.loc[nmi]
+#         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
+
+#         ##### Read 5-minute weather data from SolCast for three locations
+#         data_weather0 = pd.read_csv(input_features['weather_data1_path'])
+#         data_weather0['PeriodStart'] = pd.to_datetime(data_weather0['PeriodStart'])
+#         data_weather0 = data_weather0.drop('PeriodEnd', axis=1)
+#         data_weather0 = data_weather0.rename(columns={"PeriodStart": "datetime"})
+#         data_weather0.set_index('datetime', inplace=True)
+#         data_weather0.index = data_weather0.index.tz_convert('Australia/Sydney')
+#         # data_weather0['isweekend'] = (data_weather0.index.day_of_week > 4).astype(int)
+#         # data_weather0['Temp_EWMA'] = data_weather0.AirTemp.ewm(com=0.5).mean()
+        
+#         # *** Temporary *** 
+#         filt = (data_weather0.index > '2018-01-01 23:59:00')
+#         data_weather0 = data_weather0.loc[filt].copy()
+        
+#         data_weather1 = pd.read_csv(input_features['weather_data2_path'])
+#         data_weather1['PeriodStart'] = pd.to_datetime(data_weather1['PeriodStart'])
+#         data_weather1 = data_weather1.drop('PeriodEnd', axis=1)
+#         data_weather1 = data_weather1.rename(columns={"PeriodStart": "datetime"})
+#         data_weather1.set_index('datetime', inplace=True)
+#         data_weather1.index = data_weather1.index.tz_convert('Australia/Sydney')
+
+
+#         # *** Temporary *** 
+#         filt = (data_weather1.index > '2018-01-01 23:59:00')
+#         data_weather1 = data_weather1.loc[filt].copy()
+
+#         data_weather2 = pd.read_csv(input_features['weather_data3_path'])
+#         data_weather2['PeriodStart'] = pd.to_datetime(data_weather2['PeriodStart'])
+#         data_weather2 = data_weather2.drop('PeriodEnd', axis=1)
+#         data_weather2 = data_weather2.rename(columns={"PeriodStart": "datetime"})
+#         data_weather2.set_index('datetime', inplace=True)
+#         data_weather2.index = data_weather2.index.tz_convert('Australia/Sydney')
+
+
+#         # *** Temporary *** 
+#         filt = (data_weather2.index > '2018-01-01 23:59:00')
+#         data_weather2 = data_weather2.loc[filt].copy()
+
+#         data_weather = {'Loc1': data_weather0,
+#                         'Loc2': data_weather1,
+#                         'Loc3': data_weather2,  }
+
+
+#     global Customers
+
+#     class Customers:
+        
+#         num_of_customers = 0
+
+#         def __init__(self, nmi,input_features):
+
+#             self.nmi = nmi      # store nmi in each object              
+#             self.data = data.loc[self.nmi]      # store data in each object         
+
+#             Customers.num_of_customers += 1
+
+#         def generate_forecaster(self,input_features):
+            
+#             """
+#             generate_forecaster(self,input_features)
+            
+#             This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+#             It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+#             have different objective can be used with the same parameters.
+            
+#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
+#             """
+
+#             # Create a forecasting object
+#             self.forecaster = ForecasterAutoreg(
+#                     regressor = make_pipeline(StandardScaler(), Ridge()),  
+#                     lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+#                 )
+
+#             # Train the forecaster using the train data
+#             self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+
+#         def generate_optimised_forecaster_object(self,input_features):
+            
+#             """
+#             generate_optimised_forecaster_object(self,input_features)
+            
+#             This function generates a forecaster object for each \textit{nmi} to be used for a recursive multi-step forecasting method.
+#             It builds on function Generate\_forecaster\_object by combining grid search strategy with backtesting to identify the combination of lags 
+#             and hyperparameters that achieve the best prediction performance. As default, it is based on a linear least squares with \textit{l2} regularisation method. 
+#             Alternatively, it can use LinearRegression() and Lasso() methods to generate the forecaster object.
+
+#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
+#             """
+
+#             # This line is used to hide the bar in the optimisation process
+#             tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
+
+#             self.forecaster = ForecasterAutoreg(
+#                     regressor = make_pipeline(StandardScaler(), Ridge()),
+#                     lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+#                 )
+
+#             # Regressor's hyperparameters
+#             param_grid = {'ridge__alpha': np.logspace(-3, 5, 10)}
+#             # Lags used as predictors
+#             lags_grid = [list(range(1,24)), list(range(1,48)), list(range(1,72)), list(range(1,96))]
+
+#             # optimise the forecaster
+#             grid_search_forecaster(
+#                             forecaster  = self.forecaster,
+#                             y           = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+#                             param_grid  = param_grid,
+#                             # lags_grid   = lags_grid,
+#                             steps       =  input_features['Window size'],
+#                             metric      = 'mean_absolute_error',
+#                             # refit       = False,
+#                             initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * 10,
+#                             # fixed_train_size   = False,
+#                             return_best = True,
+#                             verbose     = False
+#                     )
+            
+
+#         def generate_prediction(self,input_features):
+#             """
+#             generate_prediction(self,input_features)
+            
+#             This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
+            
+#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
+#             """
+            
+#             new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+#             self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(new_index)
+
+#         def generate_interval_prediction(self,input_features):
+#             """
+#             generate_interval_prediction(self,input_features)
+            
+#             This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
+#             The confidence level can be set in the function parameters as "interval = [10, 90]".
+        
+#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
+#             """
+
+#             # Create a time-index for the dates that are being predicted
+#             new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            
+#             # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
+#             self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(new_index)
+
+
+#         def generate_disaggregation_using_reactive(self):
+
+#             QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
+#             QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
+#             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
+#             QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
+#             QP_coeff = QP_coeff[QP_coeff.index <= self.data.reactive_power.index[-1]]
+
+#             set_diff = list( set(QP_coeff.index)-set(self.data.reactive_power.index) )
+#             QP_coeff = QP_coeff.drop(set_diff)
+
+#             load_est = self.data.reactive_power / QP_coeff 
+#             pv_est = load_est  - self.data.active_power
+#             pv_est[pv_est < 0] = 0
+#             # pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
+#             load_est = pv_est + self.data.active_power
+            
+#             self.data['pv_disagg'] = pv_est
+#             self.data['demand_disagg'] = load_est
+
+#         def Generate_disaggregation_positive_minimum_PV(self):
+#             D = copy(self.data.active_power)
+#             D[D<=0] = 0
+#             S = copy(self.data.active_power)
+#             S[S>=0] = 0
+#             self.data['pv_disagg'] =  - S
+#             self.data['demand_disagg'] = D
+
+#     customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
+
+#     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
