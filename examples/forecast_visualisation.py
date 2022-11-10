@@ -14,13 +14,13 @@ from converge_load_forecasting import initialise
 
 #### Use either path data approach if data is available or raw data approach to download it from a server
 # raw_data read from a server
-MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=a14b61e5-5d5b-42c0-becd-b08dd99ddf96&files_ids=17795760'
+MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805910'
 raw_data = pd.read_csv(MURESK_network_data_url)
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,forecasted_param = 'active_power',end_training='2022-07-27',Last_observed_window='2022-07-27',windows_to_be_forecasted=3)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,forecasted_param = 'active_power',end_training='2022-07-12',Last_observed_window='2022-07-12',windows_to_be_forecasted=3)
 
 # # Read if data is availbale in csv format
-# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv'
-# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param ='active_power',end_training='2022-07-27',Last_observed_window='2022-07-27',windows_to_be_forecasted=3)
+# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/_WANNIA_8MB_MURESK-nmi-loads_example.csv'
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param ='active_power',end_training='2022-07-12',Last_observed_window='2022-07-12',windows_to_be_forecasted=3)
 
 # Set this value to choose an nmi from customers_nmi 
 # Examples
