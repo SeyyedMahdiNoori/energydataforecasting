@@ -807,7 +807,12 @@ def SDD_known_pvs_single_node(customer,customers_known_pv,datetimes):
     
     load_dis = customer.data.active_power + pv_dis
 
-    return  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 def SDD_known_pvs_single_node_for_parallel(customer,datetimes):
 
@@ -842,7 +847,12 @@ def SDD_known_pvs_single_node_for_parallel(customer,datetimes):
     
     load_dis = customer.data.active_power + pv_dis
 
-    return  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 
 
@@ -863,15 +873,12 @@ def SDD_known_pvs_multiple_nodes(customers,input_features,customers_known_pv,dat
     global customers_known_pv_shared
 
     predictions_prallel = pool_executor_parallel_knownPVS(SDD_known_pvs_single_node_for_parallel,customers.values(),input_features,customers_known_pv,datetimes)
-    
-    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
-
-    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     if 'customers_known_pv_shared' in globals():
         del(customers_known_pv_shared)
 
-    return(predictions_output)
+    return(predictions_prallel)
 
 
 
@@ -914,7 +921,12 @@ def SDD_using_temp_single_node(customer,data_weather):
     pv_dis[pv_dis < 0 ] = 0 
     load_dis =  customer.data.active_power + pv_dis
 
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 def SDD_using_temp_single_node_for_parallel(customer):
 
@@ -954,7 +966,12 @@ def SDD_using_temp_single_node_for_parallel(customer):
     pv_dis[pv_dis < 0 ] = 0 
     load_dis =  customer.data.active_power + pv_dis
 
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 def pool_executor_parallel_temperature(function_name,repeat_iter,input_features,data_weather):
     
@@ -971,16 +988,12 @@ def SDD_using_temp_multilple_nodes(customers,input_features,data_weather):
     global shared_weather_data
 
     predictions_prallel = pool_executor_parallel_temperature(SDD_using_temp_single_node_for_parallel,customers.values(),input_features,data_weather)
-    
-    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
-
-    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     if 'shared_weather_data' in globals():
         del(shared_weather_data)
 
-
-    return(predictions_output)
+    return(predictions_prallel)
 
 
 # # ================================================================
@@ -1050,7 +1063,12 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
         pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,load_dis - customer.data.active_power)
         load_dis = customer.data.active_power + pv_dis
 
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 
 def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
@@ -1093,7 +1111,12 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
 
     print(f'customer_ID: {customer.nmi} done!')
 
-    return pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+    return (result)
 
 
 def pool_executor_parallel_known_pvs_temp(function_name,repeat_iter,input_features,data_weather,customers_known_pv,datetimes):
@@ -1115,17 +1138,14 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
     global shared_weather_data
 
     predictions_prallel = pool_executor_parallel_known_pvs_temp(SDD_known_pvs_temp_single_node_algorithm_for_parallel,customers.values(),input_features,data_weather,customers_known_pv,datetimes)
-    
-    predictions_output = {list(customers.keys())[i]: predictions_prallel[i] for i in range(0,len(customers.keys()))}
-
-    # predictions_prallel = pd.concat(predictions_prallel, axis=0)
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     if 'shared_data_known_pv' in globals():
         del(shared_data_known_pv)
     if 'shared_weather_data' in globals():
         del(shared_weather_data)
 
-    return(predictions_output)
+    return(predictions_prallel)
 
 
 

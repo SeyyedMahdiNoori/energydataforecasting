@@ -133,7 +133,7 @@ pv5 = SDD_known_pvs_single_node(customers[nmi],customers_known_pv,datetimes)
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv5.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+pv5.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
 customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
@@ -151,7 +151,7 @@ pv6 = SDD_using_temp_single_node(customers[nmi],data_weather)
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv6.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+pv6.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
 customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
@@ -170,7 +170,7 @@ pv7 = SDD_known_pvs_temp_single_node_algorithm(customers[nmi],data_weather,custo
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv7.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+pv7.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
 customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
