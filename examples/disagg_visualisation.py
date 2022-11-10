@@ -5,65 +5,52 @@ plt.rcParams["font.size"] = "16"
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
 import numpy as np
+import pandas as pd
 from sklearn.metrics import mean_squared_error
 
 
 from converge_load_forecasting import initialise
 from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_multiple_times,SDD_Same_Irrad_no_PV_houses_multiple_times,SDD_constant_PF_single_node,SDD_known_pvs_single_node,SDD_using_temp_single_node,SDD_known_pvs_temp_single_node_algorithm
 
-# input_features = {  'file_type': 'Converge',
-#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
+#### Use either path data approach if data is available or raw data approach to download it from a server
 
-# input_features = {  'file_type': 'NextGen',
-#                     'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
-#                     'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
-#                     'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
-#                     'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 8      }  
-# data, customers_nmi,customers_nmi_with_pv,datetimes, customers,data_weather = read_data(input_features)
+#### Use either path data approach if data is available or raw data approach to download it from a server
+# # raw_data read from a server
+NextGen_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805925'
+raw_data = pd.read_csv(NextGen_network_data_url)
+canberra_weather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805920'
+raw_weather_data = pd.read_csv(canberra_weather_url)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,raw_weather_data=raw_weather_data)
 
-path_data2 = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv'
-weatherdatapath2 = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_weather_data.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(path_data2,'active_power',weatherdatapath2)
+# # Donwload if data is availbale in csv format
+# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/NextGen_example.csv'
+# weatherdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/Canberra_weather_data.csv'
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
 
 
-# Set this value to choose an nmi from customers_nmi 
-# Examples
-# nmi = customers_nmi[10]
+
+
+# # Set this value to choose an nmi from customers_nmi 
+# # Examples
+# # nmi = customers_nmi[10]
 nmi = customers_nmi_with_pv[1]
-# Dates_for_plot = '2018-01-10':'2018-01-13'
-####################################################################
-## 7 different techniques to disaggregate solar and demand 
-####################################################################
+Dates_for_plot_start = '2018-12-16'
+Dates_for_plot_end = '2018-12-17'
+# ####################################################################
+# ## 7 different techniques to disaggregate solar and demand 
+# ####################################################################
 
-################
-## technique 1
-################
+# ################
+# ## technique 1
+# ################
 
 pv1 = SDD_min_solar_single_node(customers[nmi],input_features)
 
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv1.loc[nmi].pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv1.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -76,13 +63,13 @@ plt.show()
 # ## technique 2
 # ################
 
-pv2 = SDD_Same_Irrad_multiple_times(data,input_features,customers[customers_nmi[0]].data['2018-01-10':'2018-01-13'].index,customers_nmi_with_pv)
+pv2 = SDD_Same_Irrad_multiple_times(data,input_features,customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_nmi_with_pv)
 
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv2.loc[nmi].pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv2.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -98,13 +85,13 @@ plt.show()
 # customers_without_pv = [customers_nmi_with_pv[i] for i in np.random.randint(2, size=10)]
 customers_without_pv  = [customers_nmi_with_pv[i] for i in [0,4,5,8,10,19,20,22,40,60]]  # randomly select 10 nmi as nmi's without pv
 customers_with_pv = [i for i in customers_nmi_with_pv if i not in customers_without_pv]
-pv3  = SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,customers[customers_nmi[0]].data['2018-01-10':'2018-01-13'].index,customers_with_pv,customers_without_pv)
+pv3  = SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_with_pv,customers_without_pv)
 
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv3.loc[nmi].pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv3.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -123,8 +110,8 @@ pv4 = SDD_constant_PF_single_node(customers[nmi],input_features)
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv4.loc[nmi].pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv4.loc[nmi].pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -146,8 +133,8 @@ pv5 = SDD_known_pvs_single_node(customers[nmi],customers_known_pv,datetimes)
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv5.pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv5.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -164,8 +151,8 @@ pv6 = SDD_using_temp_single_node(customers[nmi],data_weather)
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv6.pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv6.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -183,15 +170,11 @@ pv7 = SDD_known_pvs_temp_single_node_algorithm(customers[nmi],data_weather,custo
 # Time series plot
 # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-pv7.pv_disagg['2018-01-10':'2018-01-12'].plot(label = 'min pos PV')
-customers[nmi].data.pv['2018-01-10':'2018-01-12'].plot(label = 'real')
+pv7.pv_disagg[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'min pos PV')
+customers[nmi].data.pv[Dates_for_plot_start:Dates_for_plot_end].plot(label = 'real')
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
 ax.legend()
 # plt.savefig('Active_power_data.eps', format='eps')
 plt.show()
-
-
-
-

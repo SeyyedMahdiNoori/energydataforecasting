@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import copy
+import pandas as pd
 plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.size"] = "16"
 from statsmodels.graphics.tsaplots import plot_acf
@@ -11,42 +12,20 @@ from sklearn.metrics import mean_squared_error
 from converge_load_forecasting import initialise
 
 
+#### Use either path data approach if data is available or raw data approach to download it from a server
+# raw_data read from a server
+MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=a14b61e5-5d5b-42c0-becd-b08dd99ddf96&files_ids=17795760'
+raw_data = pd.read_csv(MURESK_network_data_url)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,forecasted_param = 'active_power',end_training='2022-07-27',Last_observed_window='2022-07-27',windows_to_be_forecasted=3)
 
-# # Set features of the predections
-# input_features = {  'file_type': 'NextGen',
-#                     'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
-#                     'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
-#                     'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
-#                     'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 8      }  
-
-# input_features = {  'file_type': 'Converge',
-#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
-
-path_data = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(path_data,'active_power')
+# # Read if data is availbale in csv format
+# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv'
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param ='active_power',end_training='2022-07-27',Last_observed_window='2022-07-27',windows_to_be_forecasted=3)
 
 # Set this value to choose an nmi from customers_nmi 
 # Examples
 # nmi = customers_nmi[10]
-nmi = customers_nmi_with_pv[1]
+nmi = customers_nmi_with_pv[5]
 
 # Time series plot
 # ==============================================================================
@@ -115,22 +94,6 @@ ax.set_title('Demand distribution by the time of the day')
 # plt.savefig('Seasonality_Day.eps', format='eps')
 plt.show()
 
-
-# # # #### Not done yet
-# # # # Violinplot
-# # # # ==============================================================================
-# # # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(7, 3.5))
-# # # sns.violinplot(
-# # #     x       = 'Demand',
-# # #     y       = 'Holiday',
-# # #     data    = data.assign(Holiday = data.Holiday.astype(str)),
-# # #     palette = 'tab10',
-# # #     ax      = ax
-# # # )
-# # # ax.set_title('Distribution of demand between holidays and non-holidays')
-# # # ax.set_xlabel('Demand')
-# # # ax.set_ylabel('Holiday');
-# # # plt.show()
 
 # Autocorrelation plot
 # ==============================================================================
@@ -222,37 +185,4 @@ ax.set_title('Energy demand forecast')
 ax.legend()
 # plt.savefig('Real_vs_pred_interval.eps', format='eps')
 plt.show()   
-
-
-# # Plot Predition vs Real data using point-based approach
-# # ==============================================================================
-# from Load_Forecasting import generate_disaggregation_regression
-# generate_disaggregation_regression()
-
-# customers[nmi].generate_forecaster(input_features)
-# customers[nmi].generate_prediction(input_features)
-# predictions= customers[nmi].predictions
-
-# input_features1 = copy.deepcopy(input_features)
-# input_features1['Forecasted_param']= 'pv_disagg'
-# customers[nmi].generate_forecaster(input_features1)
-# customers[nmi].generate_prediction(input_features1)
-# predictions_pv = customers[nmi].predictions
-
-# input_features1['Forecasted_param']= 'demand_disagg'
-# customers[nmi].generate_forecaster(input_features1)
-# customers[nmi].generate_prediction(input_features1)
-# predictions_demand = customers[nmi].predictions
-
-# predictions_agg = predictions_demand + predictions_pv
-
-# fig, ax = plt.subplots(figsize=(12, 4.5))
-# customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
-# predictions.pred.plot(linewidth=2, label='pred direct', ax=ax)
-# predictions_agg.pred.plot(linewidth=2, label='pred disagg', ax=ax)
-# # ax.set_title('Predictions vs real demand')
-# ax.legend()
-# plt.xlabel("Time")
-# plt.ylabel("Active Power (Watt)")
-# # plt.savefig('Real_vs_pred_diss.eps', format='eps')
-# plt.show()   
+  

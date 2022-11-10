@@ -36,10 +36,16 @@ warnings.filterwarnings('ignore')
 
 
 
-def initialise(customersdatapath,Forecasted_param=1,weatherdatapath=1,start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1):
+def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1):
 
     # Read data
-    data = pd.read_csv(customersdatapath)
+    if customersdatapath != 1 and len(raw_data) == 1 :
+        data = pd.read_csv(customersdatapath)     
+    elif len(raw_data)!=1 and customersdatapath == 1:
+        data = copy(raw_data)
+    else:
+        return f'Error!!! Either customersdatapath or raw_data needs to be provided'
+    
 
     # # ###### Pre-process the data ######
 
@@ -58,19 +64,30 @@ def initialise(customersdatapath,Forecasted_param=1,weatherdatapath=1,start_trai
     # save unique dates of the data
     datetimes = data.index.unique('datetime')
 
-    if weatherdatapath == 1:
+
+    if weatherdatapath == 1 and len(raw_weather_data)==1:
         data_weather = {}
-    else:
+    elif weatherdatapath != 1 and len(raw_weather_data)==1:
         data_weather = pd.read_csv(weatherdatapath)
-        data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
+        data_weather = data_weather.drop('PeriodEnd', axis=1)
+        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
         data_weather.set_index('datetime', inplace=True)
+        data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+    else:
+        data_weather = copy(raw_weather_data)
+        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
+        data_weather = data_weather.drop('PeriodEnd', axis=1)
+        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
+        data_weather.set_index('datetime', inplace=True)
+        data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
 
     input_features = {}
 
-    if Forecasted_param==1:
+    if forecasted_param==1:
         input_features['Forecasted_param'] = 'active_power'
     else:
-        input_features['Forecasted_param'] = Forecasted_param
+        input_features['Forecasted_param'] = forecasted_param
 
 
     if start_training==1:
@@ -385,7 +402,7 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
 
 # Export interval based method into a json file
-def export_interval_result_to_json(predictions_output_interval):
+def export_interval_result_to_json(predictions_output_interval,output_file_name):
     """
     export_interval_result_to_json(predictions_output_interval)
 
@@ -395,7 +412,7 @@ def export_interval_result_to_json(predictions_output_interval):
     copy_predictions_output = copy(predictions_output_interval)
     for c in copy_predictions_output.keys():
         copy_predictions_output[c] = json.loads(copy_predictions_output[c].to_json())
-    with open("prediction_interval_based.json","w") as f:
+    with open(output_file_name,"w") as f:
         json.dump(copy_predictions_output,f)
 
 def read_json_interval(filename):
@@ -862,12 +879,11 @@ def SDD_known_pvs_multiple_nodes(customers,input_features,customers_known_pv,dat
 # # Technique 6: Weather Data
 # # ================================================================
 def SDD_using_temp_single_node(customer,data_weather):
-    weather = copy(data_weather['Loc1'])
+    weather = copy(data_weather)
     weather['minute'] = weather.index.minute
     weather['hour'] = weather.index.hour
     weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
     weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
     weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
     weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
@@ -904,12 +920,11 @@ def SDD_using_temp_single_node_for_parallel(customer):
 
     print(f'customer_ID: {customer.nmi}')
 
-    weather = copy(shared_weather_data['Loc1'])
+    weather = copy(shared_weather_data)
     weather['minute'] = weather.index.minute
     weather['hour'] = weather.index.hour
     weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
     weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
     weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
     weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
@@ -1000,12 +1015,11 @@ def SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter
 
 def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_known_pv,datetimes):
     
-    weather = copy(data_weather['Loc1'])
+    weather = copy(data_weather)
     weather['minute'] = weather.index.minute
     weather['hour'] = weather.index.hour
     weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
     weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
     weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
     weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
@@ -1041,12 +1055,11 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
 
 def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
     
-    weather = copy(shared_weather_data['Loc1'])
+    weather = copy(shared_weather_data)
     weather['minute'] = weather.index.minute
     weather['hour'] = weather.index.hour
     weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
     weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather = copy(weather[weather.index < '2019-01-01'])
     weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
     weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
@@ -1113,6 +1126,15 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
         del(shared_weather_data)
 
     return(predictions_output)
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1508,3 +1530,54 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 #     customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
 
 #     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
+
+
+
+# # ================================================================
+# # Older input_features variable format (saved here for backup)
+# # ================================================================
+
+# input_features = {  'file_type': 'Converge',
+#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
+#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2022-07-01',
+#                     'End training': '2022-07-27',
+#                     'Last-observed-window': '2022-07-27',
+#                     'Window size': 48 ,
+#                     'Windows to be forecasted':    3,     
+#                     'data_freq' : '30T',
+#                     'core_usage': 8      
+#                      }
+
+# input_features = {  'file_type': 'NextGen',
+#                     'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
+#                     'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
+#                     'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
+#                     'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
+#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
+#                     'Start training': '2018-01-01',
+#                     'End training': '2018-02-01',
+#                     'Last-observed-window': '2018-02-01',
+#                     'Window size':  288,
+#                     'Windows to be forecasted':    3,
+#                     'data_freq' : '5T',
+#                     'core_usage': 8      }  
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers,data_weather = read_data(input_features)
+
+
+
+
+
+
+# # ================================================================
+# # Data URL for the examples
+# # ================================================================
+
+# MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805910'
+# Ausgrid_data = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805915'
+# NextGen_data = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805925'
+
+# nmi_csv_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805930'
+# sydney_wather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805935'
+# canberra_weather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805920'

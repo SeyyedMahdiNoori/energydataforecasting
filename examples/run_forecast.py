@@ -11,45 +11,27 @@
 # # Below is an example of the main functionalities in this package
 # # ==================================================================================================
 
+
+from more_itertools import take
+import pandas as pd
+from converge_load_forecasting import initialise,forecast_pointbased_single_node,forecast_pointbased_multiple_nodes,forecast_inetervalbased_single_node,forecast_inetervalbased_multiple_nodes
+
 # # ==================================================
 # # Initialize variables
 # # ================================================== 
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
-# Set features of the predections
-# input_features = {  'file_type': 'NextGen',
-#                     'file_name': 'NextGen.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 8      }  
 
-# # Set features of the predections
-# input_features = {  'file_type': 'Converge',
-#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
+# raw_data read from a server
+MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805910'
+raw_data = pd.read_csv(MURESK_network_data_url)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,forecasted_param = 'active_power',end_training='2022-07-12',Last_observed_window='2022-07-12',windows_to_be_forecasted=3)
 
-# Import the required libraries
-from converge_load_forecasting import initialise,forecast_pointbased_single_node,forecast_pointbased_multiple_nodes,forecast_inetervalbased_single_node,forecast_inetervalbased_multiple_nodes
-from more_itertools import take
-import pandas as pd
 
-# Read data 
-path_data = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(path_data,'active_power')
+# # Read if data is availbale in csv format
+# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/_WANNIA_8MB_MURESK-nmi-loads_example.csv'
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param ='active_power')
+
 
 # some arbitarary parameters
 n_customers = dict(take(4, customers.items()))     # take n customers from all the customer (to speed up the calculations)
@@ -76,8 +58,8 @@ print('forecast_pointbased_single_node is done!')
 res2 = forecast_pointbased_multiple_nodes(n_customers,input_features) 
 print('forecast_pointbased_multiple_nodes is done!') 
 
-# # Export the results into a csv file
-# res2.to_csv('predictions.csv')
+# Export the results into a csv file
+res2.to_csv('predictions.csv')
 
 # # ==================================================
 # # Method (2): Recursive multi-step probabilistic forecasting method
@@ -91,22 +73,16 @@ print('forecast_inetervalbased_single_node is done!')
 res4 = forecast_inetervalbased_multiple_nodes(n_customers,input_features)
 print('forecast_inetervalbased_multiple_nodes is done!')  
 
-# # Export the results into a json file
-# from converge_load_forecasting import export_interval_result_to_json
-# export_interval_result_to_json(res4)
+# Export the results into a json file
+from converge_load_forecasting import export_interval_result_to_json
+output_file_name = "prediction_interval_based.json"
+export_interval_result_to_json(res4,output_file_name)
 
 # # To read the result from the json file run the following function
 # from converge_load_forecasting import read_json_interval
 # filename = "prediction_interval_based.json"
 # loaded_predictions_output = read_json_interval(filename)
 
-
-
-# # ==================================================================================================# # ==================================================================================================
-# # ==================================================================================================# # ==================================================================================================
-# #                                                                                     Examples of solar demand disaggregation functions
-# # ==================================================================================================# # ==================================================================================================
-# # ==================================================================================================# # ==================================================================================================
 
 
 
