@@ -73,16 +73,8 @@ print('forecast_inetervalbased_single_node is done!')
 res4 = forecast_inetervalbased_multiple_nodes(n_customers,input_features)
 print('forecast_inetervalbased_multiple_nodes is done!')  
 
-# Export the results into a json file
-from converge_load_forecasting import export_interval_result_to_json
-output_file_name = "prediction_interval_based.json"
-export_interval_result_to_json(res4,output_file_name)
-
-# # To read the result from the json file run the following function
-# from converge_load_forecasting import read_json_interval
-# filename = "prediction_interval_based.json"
-# loaded_predictions_output = read_json_interval(filename)
-
+# Export the results into a csv file
+res4.to_csv('predictions.csv')
 
 
 
