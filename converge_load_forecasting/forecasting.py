@@ -33,11 +33,12 @@ warnings.filterwarnings('ignore')
 
 
 
-
-
-
 def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1):
+    '''
+    initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1)
 
+    This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires either a path to a csv file or raw_data. Other inputs are all optional.  
+    '''
     # Read data
     if customersdatapath != 1 and len(raw_data) == 1 :
         data = pd.read_csv(customersdatapath)     
@@ -604,8 +605,8 @@ def SDD_Same_Irrad_no_PV_houses_single_time(time_step,data,customers_with_pv,cus
 
     # # Objective
     def obj_rule(model):
-        return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
-                + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
+        return (  sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
+                + sum(model.pv[t,i]**2 for i in customers_with_pv) 
                 )
     model.obj=Objective(rule=obj_rule)
 
