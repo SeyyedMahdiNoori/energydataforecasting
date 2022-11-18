@@ -249,7 +249,7 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
         def generate_disaggregation_using_reactive(self):
 
             QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
-            QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
+            QP_coeff[pd.Timestamp((QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d"))] = QP_coeff[-1]
             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
             QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
             QP_coeff = QP_coeff[QP_coeff.index <= self.data.reactive_power.index[-1]]
@@ -864,6 +864,12 @@ def SDD_using_temp_single_node(customer,data_weather):
     set_diff = list( set(weather_input.index)-set( pv_dis.index) )
     weather_input = weather_input.drop(set_diff)
 
+
+    # # Added because of missing rows in Ausgrid and Solcast data
+    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+    customer.data = customer.data.drop(set_diff)
+    pv_dis = pv_dis.drop(set_diff)
+
     load_dis = customer.data.active_power + pv_dis
 
     iteration = 0
@@ -909,6 +915,11 @@ def SDD_using_temp_single_node_for_parallel(customer):
     pv_dis = -pv_dis
     set_diff = list( set(weather_input.index)-set( pv_dis.index) )
     weather_input = weather_input.drop(set_diff)
+
+    # # Added because of missing rows in Ausgrid and Solcast data
+    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+    customer.data = customer.data.drop(set_diff)
+    pv_dis = pv_dis.drop(set_diff)
 
     load_dis = customer.data.active_power + pv_dis
 
