@@ -844,7 +844,6 @@ def SDD_known_pvs_multiple_nodes(customers,input_features,customers_known_pv,dat
     return(predictions_prallel)
 
 
-
 # # ================================================================
 # # Technique 6: Weather Data
 # # ================================================================
@@ -863,7 +862,6 @@ def SDD_using_temp_single_node(customer,data_weather):
     pv_dis = -pv_dis
     set_diff = list( set(weather_input.index)-set( pv_dis.index) )
     weather_input = weather_input.drop(set_diff)
-
 
     # # Added because of missing rows in Ausgrid and Solcast data
     set_diff = list( set( pv_dis.index) - set(weather_input.index) )
@@ -916,10 +914,12 @@ def SDD_using_temp_single_node_for_parallel(customer):
     set_diff = list( set(weather_input.index)-set( pv_dis.index) )
     weather_input = weather_input.drop(set_diff)
 
+
     # # Added because of missing rows in Ausgrid and Solcast data
     set_diff = list( set( pv_dis.index) - set(weather_input.index) )
     customer.data = customer.data.drop(set_diff)
     pv_dis = pv_dis.drop(set_diff)
+
 
     load_dis = customer.data.active_power + pv_dis
 
@@ -1018,9 +1018,18 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
     set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
     weather_input = weather_input.drop(set_diff)
 
+    # # Added because of missing rows in Ausgrid and Solcast data
+    set_diff = list( set( pv_iter0.index) - set(weather_input.index) )
+    datetimes = [i for i in datetimes if i not in set_diff]
+    pv_iter0 = pv_iter0.drop(set_diff)
 
     pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter0)
+    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+    pv_dis = pv_dis.drop(set_diff)
+    
     load_dis = customer.data.active_power + pv_dis
+    set_diff = list( set( load_dis.index) - set(weather_input.index) )
+    load_dis = load_dis.drop(set_diff)
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
@@ -1033,9 +1042,12 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
         
         regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
         pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,load_dis - customer.data.active_power)
         load_dis = customer.data.active_power + pv_dis
+        set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+        pv_dis = pv_dis.drop(set_diff)
+        load_dis = load_dis.drop(set_diff)
 
     result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
     nmi = [customer.nmi] * len(result)
@@ -1062,11 +1074,19 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
     set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
     weather_input = weather_input.drop(set_diff)
 
+    # # Added because of missing rows in Ausgrid and Solcast data
+    set_diff = list( set( pv_iter0.index) - set(weather_input.index) )
+    datetimes = [i for i in datetimes if i not in set_diff]
+    pv_iter0 = pv_iter0.drop(set_diff)
 
     pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,pv_iter0)
+    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+    pv_dis = pv_dis.drop(set_diff)
     
     print(f'customer_ID: {customer.nmi} begin')
     load_dis = customer.data.active_power + pv_dis
+    set_diff = list( set( load_dis.index) - set(weather_input.index) )
+    load_dis = load_dis.drop(set_diff)
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
@@ -1079,9 +1099,12 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
         
         regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
         pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,load_dis - customer.data.active_power)
         load_dis = customer.data.active_power + pv_dis
+        set_diff = list( set( pv_dis.index) - set(weather_input.index) )
+        pv_dis = pv_dis.drop(set_diff)
+        load_dis = load_dis.drop(set_diff)
 
     print(f'customer_ID: {customer.nmi} done!')
 
@@ -1120,6 +1143,7 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
         del(shared_weather_data)
 
     return(predictions_prallel)
+
 
 
 
