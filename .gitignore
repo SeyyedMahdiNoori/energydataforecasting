@@ -23,3 +23,5 @@ development.py
 /converge_load_forecasting/__pycache__
 /data
 test_eample.py
+GetRes.py
+RunDisagg_paper.py

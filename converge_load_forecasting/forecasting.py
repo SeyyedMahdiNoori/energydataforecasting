@@ -593,21 +593,32 @@ def SDD_Same_Irrad_no_PV_houses_single_time(time_step,data,customers_with_pv,cus
     data_one_time = data.loc[pd.IndexSlice[:, datetimes[t]], :]
 
     model.Time = Set(initialize=range(t,t+1))
-    model.pv=Var(model.Time,customers_with_pv, bounds=(0,1))
-    model.demand=Var(model.Time,customers_with_pv,within=NonNegativeReals)
-    model.penalty_p=Var(model.Time,customers_with_pv,within=NonNegativeReals)
-    model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.pv = Var(model.Time,customers_with_pv, bounds=(0,1))
+    model.absLoad = Var(model.Time, within=NonNegativeReals)
+    model.demand = Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_p = Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_n = Var(model.Time,customers_with_pv,within=NonNegativeReals)
 
     # # Constraints
     def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
     model.cons = Constraint(model.Time,customers_with_pv,rule=load_balance)
 
+    def abs_Load_1(model,t,i):
+        return model.absLoad[t] >= sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]] for i in customers_without_pv )/len(customers_without_pv)
+    model.cons_abs1 = Constraint(model.Time,customers_with_pv,rule=abs_Load_1)
+
+    def abs_Load_2(model,t,i):
+        return model.absLoad[t] >=  sum(data_one_time.loc[i].load_active[datetimes[t]] for i in customers_without_pv )/len(customers_without_pv) - sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv)
+    model.cons_abs2 = Constraint(model.Time,customers_with_pv,rule=abs_Load_2)
+
     # # Objective
     def obj_rule(model):
-        return (  sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
-                + sum(model.pv[t,i]**2 for i in customers_with_pv) 
-                )
+        return (  model.absLoad[t] + sum(model.pv[t,i]**2 for i in customers_with_pv)/len(customers_with_pv) )
+    # def obj_rule(model):
+    #     return (  sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
+    #             + sum(model.pv[t,i]**2 for i in customers_with_pv) 
+    #             )
     model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
@@ -674,21 +685,32 @@ def SDD_Same_Irrad_no_PV_houses_single_time_for_parallel(time_step,customers_wit
     data_one_time = shared_data_disaggregation_optimisation_no_PV.loc[pd.IndexSlice[:, datetimes[t]], :]
 
     model.Time = Set(initialize=range(t,t+1))
-    model.pv=Var(model.Time,customers_with_pv, bounds=(0,1))
-    model.demand=Var(model.Time,customers_with_pv,within=NonNegativeReals)
-    model.penalty_p=Var(model.Time,customers_with_pv,within=NonNegativeReals)
-    model.penalty_n=Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.pv = Var(model.Time,customers_with_pv, bounds=(0,1))
+    model.absLoad = Var(model.Time, within=NonNegativeReals)
+    model.demand = Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_p = Var(model.Time,customers_with_pv,within=NonNegativeReals)
+    model.penalty_n = Var(model.Time,customers_with_pv,within=NonNegativeReals)
 
     # # Constraints
     def load_balance(model,t,i):
         return model.demand[t,i] - model.pv[t,i] * data_one_time.loc[i].pv_system_size[0] == data_one_time.loc[i].active_power[datetimes[t]]
     model.cons = Constraint(model.Time,customers_with_pv,rule=load_balance)
 
+    def abs_Load_1(model,t,i):
+        return model.absLoad[t] >= sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]] for i in customers_without_pv )/len(customers_without_pv)
+    model.cons_abs1 = Constraint(model.Time,customers_with_pv,rule=abs_Load_1)
+
+    def abs_Load_2(model,t,i):
+        return model.absLoad[t] >=  sum(data_one_time.loc[i].load_active[datetimes[t]] for i in customers_without_pv )/len(customers_without_pv) - sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv)
+    model.cons_abs2 = Constraint(model.Time,customers_with_pv,rule=abs_Load_2)
+
     # # Objective
     def obj_rule(model):
-        return (sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
-                + sum(sum(model.pv[t,i]**2 for i in customers_with_pv) for t in model.Time)
-                )
+        return (  model.absLoad[t] + sum(model.pv[t,i]**2 for i in customers_with_pv)/len(customers_with_pv) )
+    # def obj_rule(model):
+    #     return (  sum(model.demand[t,i] for i in customers_with_pv)/len(customers_with_pv) - sum(data_one_time.loc[i].load_active[datetimes[t]]/len(customers_without_pv) for i in customers_without_pv) 
+    #             + sum(model.pv[t,i]**2 for i in customers_with_pv) 
+    #             )
     model.obj=Objective(rule=obj_rule)
 
     # # Solve the model
