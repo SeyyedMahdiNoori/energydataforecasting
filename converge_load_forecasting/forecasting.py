@@ -75,6 +75,22 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
         data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
         data_weather.set_index('datetime', inplace=True)
         data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+
+        data_weather['minute'] = data_weather.index.minute
+        data_weather['hour'] = data_weather.index.hour
+        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
+        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+        set_diff = list( set(data_weather.index)-set( datetimes) )
+        data_weather = data_weather.drop(set_diff)
+
+        set_diff = list( set( datetimes) - set(data_weather.index) )
+        for i in range(0,len(set_diff)):
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[str(set_diff[i].date())].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[str(set_diff[i].date())].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                    ],ignore_index=False)
+
     else:
         data_weather = copy(raw_weather_data)
         data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
@@ -82,6 +98,21 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
         data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
         data_weather.set_index('datetime', inplace=True)
         data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+
+        data_weather['minute'] = data_weather.index.minute
+        data_weather['hour'] = data_weather.index.hour
+        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
+        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+        set_diff = list( set(data_weather.index)-set( datetimes) )
+        data_weather = data_weather.drop(set_diff)
+
+        set_diff = list( set( datetimes) - set(data_weather.index) )
+        for i in range(0,len(set_diff)):
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[str(set_diff[i].date())].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[str(set_diff[i].date())].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                    ],ignore_index=False)
 
     input_features = {}
 
@@ -870,32 +901,18 @@ def SDD_known_pvs_multiple_nodes(customers,input_features,customers_known_pv,dat
 # # Technique 6: Weather Data
 # # ================================================================
 def SDD_using_temp_single_node(customer,data_weather):
-    weather = copy(data_weather)
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
-
+    
+    weather_input = data_weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    
     pv_dis = copy(customer.data.active_power)
     pv_dis[pv_dis > 0 ] = 0 
     pv_dis = -pv_dis
-    set_diff = list( set(weather_input.index)-set( pv_dis.index) )
-    weather_input = weather_input.drop(set_diff)
-
-    # # Added because of missing rows in Ausgrid and Solcast data
-    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-    customer.data = customer.data.drop(set_diff)
-    pv_dis = pv_dis.drop(set_diff)
-
     load_dis = customer.data.active_power + pv_dis
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
 
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
 
         iteration += 1
         pv_dis_iter = copy(pv_dis)
@@ -921,34 +938,17 @@ def SDD_using_temp_single_node_for_parallel(customer):
 
     print(f'customer_ID: {customer.nmi}')
 
-    weather = copy(shared_weather_data)
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+    weather_input = shared_weather_data[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
 
     pv_dis = copy(customer.data.active_power)
     pv_dis[pv_dis > 0 ] = 0 
     pv_dis = -pv_dis
-    set_diff = list( set(weather_input.index)-set( pv_dis.index) )
-    weather_input = weather_input.drop(set_diff)
-
-
-    # # Added because of missing rows in Ausgrid and Solcast data
-    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-    customer.data = customer.data.drop(set_diff)
-    pv_dis = pv_dis.drop(set_diff)
-
-
     load_dis = customer.data.active_power + pv_dis
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
 
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
 
         iteration += 1
         pv_dis_iter = copy(pv_dis)
@@ -1024,39 +1024,19 @@ def SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter
 
 def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_known_pv,datetimes):
     
-    weather = copy(data_weather)
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
-
-
+    weather_input = data_weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
+    
     pv_iter0 = copy(customer.data.active_power)
     pv_iter0[pv_iter0 > 0 ] = 0 
     pv_iter0 = -pv_iter0
-    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
-    weather_input = weather_input.drop(set_diff)
-
-    # # Added because of missing rows in Ausgrid and Solcast data
-    set_diff = list( set( pv_iter0.index) - set(weather_input.index) )
-    datetimes = [i for i in datetimes if i not in set_diff]
-    pv_iter0 = pv_iter0.drop(set_diff)
 
     pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter0)
-    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-    pv_dis = pv_dis.drop(set_diff)
-    
     load_dis = customer.data.active_power + pv_dis
-    set_diff = list( set( load_dis.index) - set(weather_input.index) )
-    load_dis = load_dis.drop(set_diff)
-
+    
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
 
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
         
         iteration += 1
         pv_dis_iter = copy(pv_dis)
@@ -1065,11 +1045,10 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
         regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
         load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
-        pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,load_dis - customer.data.active_power)
+        pv_dis = load_dis - customer.data.active_power
+        pv_dis[pv_dis < 0 ] = 0 
+        pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_dis)
         load_dis = customer.data.active_power + pv_dis
-        set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-        pv_dis = pv_dis.drop(set_diff)
-        load_dis = load_dis.drop(set_diff)
 
     result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
     nmi = [customer.nmi] * len(result)
@@ -1081,39 +1060,22 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
 
 def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
     
-    weather = copy(shared_weather_data)
-    weather['minute'] = weather.index.minute
-    weather['hour'] = weather.index.hour
-    weather['isweekend'] = (weather.index.day_of_week > 4).astype(int)
-    weather['Temp_EWMA'] = weather.AirTemp.ewm(com=0.5).mean()
-    weather_input = weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
-    weather_input.set_index(weather_input.index.tz_localize(None),inplace=True)
-    weather_input = weather_input[~weather_input.index.duplicated(keep='first')]
+    weather_input = shared_weather_data[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
 
     pv_iter0 = copy(customer.data.active_power)
     pv_iter0[pv_iter0 > 0 ] = 0 
     pv_iter0 = -pv_iter0
-    set_diff = list( set(weather_input.index)-set( pv_iter0.index) )
-    weather_input = weather_input.drop(set_diff)
-
-    # # Added because of missing rows in Ausgrid and Solcast data
-    set_diff = list( set( pv_iter0.index) - set(weather_input.index) )
-    datetimes = [i for i in datetimes if i not in set_diff]
-    pv_iter0 = pv_iter0.drop(set_diff)
 
     pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,pv_iter0)
-    set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-    pv_dis = pv_dis.drop(set_diff)
     
     print(f'customer_ID: {customer.nmi} begin')
     load_dis = customer.data.active_power + pv_dis
-    set_diff = list( set( load_dis.index) - set(weather_input.index) )
-    load_dis = load_dis.drop(set_diff)
+
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
 
-    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 10:
+    while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
         
         iteration += 1
         pv_dis_iter = copy(pv_dis)
@@ -1124,9 +1086,6 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
         load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
         pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,load_dis - customer.data.active_power)
         load_dis = customer.data.active_power + pv_dis
-        set_diff = list( set( pv_dis.index) - set(weather_input.index) )
-        pv_dis = pv_dis.drop(set_diff)
-        load_dis = load_dis.drop(set_diff)
 
     print(f'customer_ID: {customer.nmi} done!')
 
