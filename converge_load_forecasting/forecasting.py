@@ -88,8 +88,12 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
 
         set_diff = list( set( datetimes) - set(data_weather.index) )
         for i in range(0,len(set_diff)):
-            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[str(set_diff[i].date())].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[str(set_diff[i].date())].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
                                     ],ignore_index=False)
+            # data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+            #                         ],ignore_index=False)
+
+
 
     else:
         data_weather = copy(raw_weather_data)
@@ -111,7 +115,7 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
 
         set_diff = list( set( datetimes) - set(data_weather.index) )
         for i in range(0,len(set_diff)):
-            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[str(set_diff[i].date())].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[str(set_diff[i].date())].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
                                     ],ignore_index=False)
 
     input_features = {}
@@ -230,7 +234,7 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
             # Regressor's hyperparameters
             param_grid = {'ridge__alpha': np.logspace(-3, 5, 10)}
             # Lags used as predictors
-            lags_grid = [list(range(1,24)), list(range(1,48)), list(range(1,72)), list(range(1,96))]
+            lags_grid = [list(range(1,24)), list(range(1,48)), list(range(1,72))]
 
             # optimise the forecaster
             grid_search_forecaster(
@@ -241,7 +245,7 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
                             steps       =  input_features['Window size'],
                             metric      = 'mean_absolute_error',
                             # refit       = False,
-                            initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * 10,
+                            initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * input_features['Windows to be forecasted'],
                             # fixed_train_size   = False,
                             return_best = True,
                             verbose     = False
@@ -911,7 +915,6 @@ def SDD_using_temp_single_node(customer,data_weather):
 
     iteration = 0
     pv_dis_iter = copy(pv_dis*0)
-
     while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
 
         iteration += 1
@@ -1037,7 +1040,7 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,data_weather,customers_kno
     pv_dis_iter = copy(pv_dis*0)
 
     while (pv_dis_iter-pv_dis).abs().max() > 0.01 and iteration < 15:
-        
+
         iteration += 1
         pv_dis_iter = copy(pv_dis)
         print(f'Iteration: {iteration}')

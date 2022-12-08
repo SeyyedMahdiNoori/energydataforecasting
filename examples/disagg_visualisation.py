@@ -13,29 +13,35 @@ from converge_load_forecasting import initialise
 from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_multiple_times,SDD_Same_Irrad_no_PV_houses_multiple_times,SDD_constant_PF_single_node,SDD_known_pvs_single_node,SDD_using_temp_single_node,SDD_known_pvs_temp_single_node_algorithm
 
 #### Use either path data approach if data is available or raw data approach to download it from a server
-
-#### Use either path data approach if data is available or raw data approach to download it from a server
 # # raw_data read from a server
-NextGen_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805925'
-raw_data = pd.read_csv(NextGen_network_data_url)
-canberra_weather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805920'
-raw_weather_data = pd.read_csv(canberra_weather_url)
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,raw_weather_data=raw_weather_data)
+# raw_data = pd.read_csv(NextGen_network_data_url)
+# raw_weather_data = pd.read_csv(canberra_weather_url)
+# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,raw_weather_data=raw_weather_data)
 
-# # Donwload if data is availbale in csv format
-# customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/NextGen_example.csv'
-# weatherdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/Canberra_weather_data.csv'
-# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
+# Donwload if data is availbale in csv format
+customersdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/NextGen_example.csv'
+weatherdatapath = '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Examples_data/Canberra_weather_data.csv'
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
 
 
-
-
+# ################
+# ## Initialise variables 
+# ################
 # # Set this value to choose an nmi from customers_nmi 
 # # Examples
-# # nmi = customers_nmi[10]
-nmi = customers_nmi_with_pv[1]
-Dates_for_plot_start = '2018-12-16'
-Dates_for_plot_end = '2018-12-17'
+nmi = customers_nmi_with_pv[10]
+
+# Dates for disaggregation
+Dates_for_plot_start = '2018-12-23'
+Dates_for_plot_end = '2018-12-24'
+
+# Required variables for some of the techniques
+customers_without_pv  = [customers_nmi_with_pv[i] for i in np.random.default_rng().choice(len(customers_nmi_with_pv), size=30, replace=False) if i != nmi]  # randomly select 10 nmi as nmi's without pv
+customers_with_pv = [i for i in customers_nmi_with_pv if i not in customers_without_pv]
+known_pv_nmis = [customers_with_pv[i] for i in np.random.default_rng().choice(len(customers_with_pv), size=3, replace=False) if i != nmi]
+customers_known_pv = {i: customers[i] for i in known_pv_nmis}
+
+
 # ####################################################################
 # ## 7 different techniques to disaggregate solar and demand 
 # ####################################################################
@@ -63,7 +69,7 @@ plt.show()
 # ## technique 2
 # ################
 
-pv2 = SDD_Same_Irrad_multiple_times(data,input_features,customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_nmi_with_pv)
+pv2 = SDD_Same_Irrad_multiple_times(data,input_features,customers[nmi].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_nmi_with_pv)
 
 # Time series plot
 # ==============================================================================
@@ -82,9 +88,6 @@ plt.show()
 # ## technique 3
 # ################
 
-# customers_without_pv = [customers_nmi_with_pv[i] for i in np.random.randint(2, size=10)]
-customers_without_pv  = [customers_nmi_with_pv[i] for i in [0,4,5,8,10,19,20,22,40,60]]  # randomly select 10 nmi as nmi's without pv
-customers_with_pv = [i for i in customers_nmi_with_pv if i not in customers_without_pv]
 pv3  = SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_with_pv,customers_without_pv)
 
 # Time series plot
@@ -123,11 +126,7 @@ plt.show()
 # ################
 # ## technique 5
 # ################
-known_pv_nmis = [customers_nmi_with_pv[i] for i in [5,10,30,40]]
-customers_known_pv = {i: customers[i] for i in known_pv_nmis}
-# from more_itertools import take
-# n_customers = dict(take(4, customers.items())) 
-# a = Generate_disaggregation_using_knownPVS_all(n_customers,input_features,customers_known_pv,datetimes)
+
 pv5 = SDD_known_pvs_single_node(customers[nmi],customers_known_pv,datetimes)
 
 # Time series plot
@@ -146,6 +145,7 @@ plt.show()
 # ################
 # ## technique 6
 # ################
+
 pv6 = SDD_using_temp_single_node(customers[nmi],data_weather)
 
 # Time series plot
@@ -163,7 +163,7 @@ plt.show()
 # ################
 # ## technique 7
 # ################
-customers_known_pv = {customers_nmi_with_pv[i]: customers[customers_nmi_with_pv[i]] for i in [10,40,50]}
+
 pv7 = SDD_known_pvs_temp_single_node_algorithm(customers[nmi],data_weather,customers_known_pv,datetimes)
 
 
