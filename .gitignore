@@ -25,3 +25,6 @@ development.py
 test_eample.py
 GetRes.py
 RunDisagg_paper.py
+/dist
+/build
+LICENSE.txt
