@@ -19,8 +19,8 @@ from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_m
 # data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,raw_weather_data=raw_weather_data)
 
 # Donwload if data is availbale in csv format
-customersdatapath = './examples/NextGen_example.csv'
-weatherdatapath = './examples/Canberra_weather_data.csv'
+customersdatapath = './NextGen_example.csv'
+weatherdatapath = './Canberra_weather_data.csv'
 data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
 
 

@@ -21,8 +21,8 @@ from converge_load_forecasting import (
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
 # # Donwload if data is availbale in csv format
-customersdatapath = './examples/NextGen_example.csv'
-weatherdatapath = './examples/Canberra_weather_data.csv'
+customersdatapath = './NextGen_example.csv'
+weatherdatapath = './Canberra_weather_data.csv'
 data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath,core_usage=50)
 
 # some arbitarary parameters

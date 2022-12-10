@@ -23,7 +23,7 @@ from converge_load_forecasting import initialise,forecast_pointbased_single_node
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
 # # Donwload if data is availbale in csv format
-customersdatapath = './examples/NextGen_example.csv'
+customersdatapath = './NextGen_example.csv'
 data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-27',Last_observed_window='2018-12-27',windows_to_be_forecasted=3)
 
 # # Set this value to choose an nmi from customers_nmi 
