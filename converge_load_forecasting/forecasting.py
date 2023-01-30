@@ -34,18 +34,19 @@ warnings.filterwarnings('ignore')
 
 
 
-def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1,db_url=1,db_table_names=1):
+def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weatherdatapath=None,raw_weather_data=None,start_training=None,end_training=None,nmi_type_path=None,Last_observed_window=None,window_size=None,windows_to_be_forecasted=None,core_usage=None,db_url=None,db_table_names=None):
     '''
-    initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1)
+    initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weatherdatapath=None,raw_weather_data=None,start_training=None,end_training=None,nmi_type_path=None,Last_observed_window=None,window_size=None,windows_to_be_forecasted=None,core_usage=None,db_url=None,db_table_names=None)
 
-    This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires either a path to a csv file or raw_data. Other inputs are all optional.  
+    This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires one of the followings: 
+    1. a path to a csv file 2. raw_data or 3. database url and the associate table names in that url. Other inputs are all optional.  
     '''
     # Read data
-    if customersdatapath != 1 and len(raw_data) == 1 :
+    if customersdatapath is not None:
         data = pd.read_csv(customersdatapath)     
-    elif len(raw_data)!=1 and customersdatapath == 1:
+    elif raw_data is not None:
         data = copy(raw_data)
-    elif db_url !=1 and db_table_names!=1:
+    elif db_url is not None and db_table_names is not None:
         sql = [f"SELECT * from {table}" for table in db_table_names]
         data = cx.read_sql(db_url,sql)
         data.sort_values(by='datetime',inplace=True)
@@ -71,9 +72,9 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
     datetimes = data.index.unique('datetime')
 
 
-    if weatherdatapath == 1 and len(raw_weather_data)==1:
+    if weatherdatapath is None and raw_weather_data is None:
         data_weather = {}
-    elif weatherdatapath != 1 and len(raw_weather_data)==1:
+    elif weatherdatapath is not None:
         data_weather = pd.read_csv(weatherdatapath)
         data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
         data_weather = data_weather.drop('PeriodEnd', axis=1)
@@ -123,23 +124,23 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
 
     input_features = {}
 
-    if forecasted_param==1:
+    if forecasted_param is None:
         input_features['Forecasted_param'] = 'active_power'
     else:
         input_features['Forecasted_param'] = forecasted_param
 
 
-    if start_training==1:
+    if start_training is None:
         input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d")
     else:
         input_features['Start training'] = start_training
 
-    if end_training==1:
-        input_features['End training'] =  datetimes[-1].strftime("%Y-%m") + '-' + str(int(datetimes[-1].strftime("%d-%m-%Y")[0:2]) - 1) 
+    if end_training is None:
+        input_features['End training'] =  (datetimes[-1] - timedelta(days=1)).strftime("%Y-%m-%d")
     else:
         input_features['End training'] = end_training
 
-    if nmi_type_path==1:
+    if nmi_type_path is None:
         customers_nmi_with_pv = copy(customers_nmi)
     else:
         input_features['nmi_type_path'] = nmi_type_path
@@ -151,24 +152,24 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
         data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
         data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
 
-    if Last_observed_window==1:
+    if Last_observed_window is None:
         input_features['Last-observed-window'] = input_features['End training']
     else:
         input_features['Last-observed-window'] = Last_observed_window
 
-    if window_size==1:
+    if window_size is None:
         input_features['Window size'] = int(timedelta(days = 1) / (datetimes[1] - datetimes[0]))
     else:
         input_features['Window size'] = window_size
 
-    if windows_to_be_forecasted==1:
+    if windows_to_be_forecasted is None:
         input_features['Windows to be forecasted'] = 1
     else:
         input_features['Windows to be forecasted'] = windows_to_be_forecasted
 
     input_features['data_freq'] = datetimes[0:3].inferred_freq
 
-    if core_usage==1:
+    if core_usage is None:
         input_features['core_usage'] = 8
     else:
         input_features['core_usage'] = core_usage
