@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import copy
-from sklearn.linear_model import Ridge # Linear least squares with l2 regularization. (https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html)
+from sklearn.linear_model import Ridge,LinearRegression # Linear least squares with l2 regularization. (https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html)
 from sklearn.pipeline import make_pipeline # Construct a Pipeline from the given estimators (for more information: https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.make_pipeline.html)
 from sklearn.preprocessing import StandardScaler  # Standardize features by removing the mean and scaling to unit variance.
 from sklearn.ensemble import RandomForestRegressor
@@ -25,6 +25,7 @@ from functools import partialmethod
 import json
 from copy import deepcopy as copy
 import itertools
+import connectorx as cx
 
 # Warnings configuration
 # ==============================================================================
@@ -33,7 +34,7 @@ warnings.filterwarnings('ignore')
 
 
 
-def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1):
+def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1,db_url=1,db_table_names=1):
     '''
     initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapath=1,raw_weather_data=[1],start_training=1,end_training=1,nmi_type_path=1,Last_observed_window=1,window_size=1,windows_to_be_forecasted=1,core_usage=1)
 
@@ -44,8 +45,12 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
         data = pd.read_csv(customersdatapath)     
     elif len(raw_data)!=1 and customersdatapath == 1:
         data = copy(raw_data)
+    elif db_url !=1 and db_table_names!=1:
+        sql = [f"SELECT * from {table}" for table in db_table_names]
+        data = cx.read_sql(db_url,sql)
+        data.sort_values(by='datetime',inplace=True)
     else:
-        return f'Error!!! Either customersdatapath or raw_data needs to be provided'
+        return f'Error!!! Either customersdatapath, raw_data or db_url needs to be provided'
     
 
     # # ###### Pre-process the data ######
@@ -54,7 +59,7 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
     data['datetime'] = pd.to_datetime(data['datetime'])
 
     # Add weekday column to the data
-    data['DayofWeek'] = data['datetime'].dt.day_name()
+    # data['DayofWeek'] = data['datetime'].dt.day_name()
 
     # Save customer nmis in a list
     customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
@@ -92,8 +97,6 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
                                     ],ignore_index=False)
             # data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
             #                         ],ignore_index=False)
-
-
 
     else:
         data_weather = copy(raw_weather_data)
@@ -133,11 +136,6 @@ def initialise(customersdatapath=1,raw_data=[1],forecasted_param=1,weatherdatapa
 
     if end_training==1:
         input_features['End training'] =  datetimes[-1].strftime("%Y-%m") + '-' + str(int(datetimes[-1].strftime("%d-%m-%Y")[0:2]) - 1) 
-    else:
-        input_features['End training'] = end_training
-
-    if end_training==1:
-        input_features['End training'] =  datetimes[-1].strftime("%Y-%m") + '-' + str(int(datetimes[-1].strftime("%d-%m-%Y")[0:2]) - 1)
     else:
         input_features['End training'] = end_training
 
@@ -428,6 +426,29 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
     return predictions_prallel
 
+
+# # ================================================================
+# # Method (3) Load_forecasting Using linear regression of Reposit data and smart meters
+# # ================================================================
+def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,hist_data_target_customer,input_features):
+
+    reg = LinearRegression().fit(
+                                np.transpose(np.array(
+                                    [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist() for i in hist_data_proxy_customers.keys()]
+                                                )       ),
+                                    np.array(hist_data_target_customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist()
+                                            )       
+                                                )           
+    ### To get the linear regression parameters use the line below
+    # LCoef = reg.coef_
+
+    To_be_predicted = np.transpose(np.array([hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['End training']:(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")].tolist() for i in hist_data_proxy_customers.keys()]))
+    pred =  pd.DataFrame(reg.predict(To_be_predicted),columns=[input_features['Forecasted_param']])
+
+    new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+    pred.set_index(new_index,inplace=True)
+    
+    return (pred)
 
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================

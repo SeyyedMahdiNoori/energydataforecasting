@@ -20,9 +20,10 @@ test123.py
 NextGen.csv
 /converge_load_forecasting.egg-info
 development.py
+/development
 /converge_load_forecasting/__pycache__
 /data
-test_eample.py
+test_example.py
 GetRes.py
 RunDisagg_paper.py
 /dist
