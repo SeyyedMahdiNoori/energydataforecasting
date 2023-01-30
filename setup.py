@@ -14,6 +14,7 @@ setup(
     long_description_content_type = 'text/markdown',
     packages=['converge_load_forecasting'],
     install_requires=[
+        'connectorx',
         'matplotlib',
         'more_itertools',
         'multiprocess',
