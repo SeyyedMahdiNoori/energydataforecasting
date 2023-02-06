@@ -26,6 +26,11 @@ import json
 from copy import deepcopy as copy
 import itertools
 import connectorx as cx
+from tsprial.forecasting import ForecastingChain
+from tsprial.forecasting import ForecastingStacked
+from sklearn.tree import DecisionTreeRegressor
+from tsprial.forecasting import ForecastingRectified
+
 
 # Warnings configuration
 # ==============================================================================
@@ -209,6 +214,70 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             # Train the forecaster using the train data
             self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
+        def generate_forecaster_direct(self,input_features):
+            
+            """
+            generate_forecaster(self,input_features)
+            
+            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+            have different objective can be used with the same parameters.
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+
+            self.forecaster_direct = ForecastingChain(
+                        Ridge(),
+                        n_estimators=input_features['Window size'],
+                        lags=range(1,input_features['Window size']+1),
+                        use_exog=False,
+                        accept_nan=False
+                                            )
+            self.forecaster_direct.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+
+        def generate_forecaster_stacking(self,input_features):
+            
+            """
+            generate_forecaster(self,input_features)
+            
+            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+            have different objective can be used with the same parameters.
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+
+            self.forecaster_stacking = ForecastingStacked(
+                        [Ridge(), DecisionTreeRegressor()],
+                        test_size = input_features['Window size']* input_features['Windows to be forecasted'],
+                        lags=range(1,input_features['Window size']+1),
+                        use_exog=False
+                                            )
+            self.forecaster_stacking.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+
+
+        def generate_forecaster_rectified(self,input_features):
+            
+            """
+            generate_forecaster(self,input_features)
+            
+            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+            have different objective can be used with the same parameters.
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+
+            self.forecaster_rectified = ForecastingRectified(
+                        Ridge(),
+                        n_estimators=200,
+                        test_size = input_features['Window size']* input_features['Windows to be forecasted'],
+                        lags=range(1,input_features['Window size']+1),
+                        use_exog=False
+                                            )
+            self.forecaster_rectified.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+
+
         def generate_optimised_forecaster_object(self,input_features):
             
             """
@@ -262,6 +331,43 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             
             new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
             self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(new_index)
+
+        def generate_prediction_direct(self,input_features):
+            """
+            generate_prediction(self,input_features)
+            
+            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+            
+            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            self.predictions_direct = pd.DataFrame(self.forecaster_direct.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
+
+        def generate_prediction_stacking(self,input_features):
+            """
+            generate_prediction(self,input_features)
+            
+            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+            
+            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            self.predictions_stacking = pd.DataFrame(self.forecaster_stacking.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
+
+
+        def generate_prediction_rectified(self,input_features):
+            """
+            generate_prediction(self,input_features)
+            
+            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
+            
+            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            """
+            
+            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+            self.predictions_rectified = pd.DataFrame(self.forecaster_rectified.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
 
         def generate_interval_prediction(self,input_features):
             """
@@ -371,6 +477,52 @@ def forecast_pointbased_single_node(customer,input_features):
 def forecast_pointbased_multiple_nodes(customers,input_features):
 
     predictions_prallel = pool_executor_parallel(forecast_pointbased_single_node,customers.values(),input_features)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
+
+
+# # ================================================================
+# # Method (2): Recitifed Recursive multi-step point-forecasting method
+# # ================================================================
+
+# This function outputs the forecasting for each nmi
+def forecast_pointbased_rectified_single_node(customer,input_features):
+
+    """
+    run_prallel_forecast_pointbased(customers_nmi,input_features)
+
+    This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
+    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
+    """
+    
+    # print(customers)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    # Train a forecasting object
+    customer.generate_forecaster_rectified(input_features)
+    
+    # Generate predictions 
+    customer.generate_prediction_rectified(input_features)
+
+    result = customer.predictions_rectified
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
+    # return customer.predictions
+
+    # return customer.predictions.rename(columns={'pred': customer.nmi})
+
+
+def forecast_pointbased_rectified_multiple_nodes(customers,input_features):
+
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_rectified_single_node,customers.values(),input_features)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
