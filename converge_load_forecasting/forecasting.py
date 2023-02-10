@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 from skforecast.ForecasterAutoreg import ForecasterAutoreg # A random forest is a meta estimator that fits a number of classifying decision trees on various sub-samples of the dataset and uses averaging to improve the predictive accuracy and control over-fitting. 
 from skforecast.model_selection import grid_search_forecaster, backtesting_forecaster
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 
@@ -62,7 +62,9 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     # # ###### Pre-process the data ######
 
     # format datetime to pandas datetime format
-    data['datetime'] = pd.to_datetime(data['datetime'])
+    # data['datetime'] = pd.to_datetime(data['datetime'])
+    data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True)
+    data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
 
     # Add weekday column to the data
     # data['DayofWeek'] = data['datetime'].dt.day_name()
@@ -81,7 +83,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
         data_weather = {}
     elif weatherdatapath is not None:
         data_weather = pd.read_csv(weatherdatapath)
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
+        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'], utc=True, infer_datetime_format=True)
         data_weather = data_weather.drop('PeriodEnd', axis=1)
         data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
         data_weather.set_index('datetime', inplace=True)
@@ -583,25 +585,88 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 # # ================================================================
 # # Method (3) Load_forecasting Using linear regression of Reposit data and smart meters
 # # ================================================================
-def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,hist_data_target_customer,input_features):
+def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_features):
 
     reg = LinearRegression().fit(
                                 np.transpose(np.array(
                                     [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist() for i in hist_data_proxy_customers.keys()]
                                                 )       ),
-                                    np.array(hist_data_target_customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist()
+                                    np.array(customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist()
                                             )       
                                                 )           
     ### To get the linear regression parameters use the line below
     # LCoef = reg.coef_
 
-    To_be_predicted = np.transpose(np.array([hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['End training']:(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")].tolist() for i in hist_data_proxy_customers.keys()]))
-    pred =  pd.DataFrame(reg.predict(To_be_predicted),columns=[input_features['Forecasted_param']])
+    proxy_meas_repo = [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = 1)).strftime('%Y-%m-%d'):(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = input_features['Windows to be forecasted'])).strftime('%Y-%m-%d')] for i in hist_data_proxy_customers.keys()]
+    proxy_meas_repo_ = np.transpose(np.array(proxy_meas_repo))
 
-    new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-    pred.set_index(new_index,inplace=True)
+    pred =  pd.DataFrame(reg.predict(proxy_meas_repo_),columns=['pred'])
+
+    # new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+    pred['datetime']= proxy_meas_repo[0].index
     
+    nmi = [customer.nmi] * len(pred)
+    pred['nmi'] = nmi
+    
+    # pred.reset_index(inplace=True)
+    pred.set_index(['nmi', 'datetime'], inplace=True)    
+
     return (pred)
+
+
+# # ================================================================
+# # Method (3) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+# # ================================================================
+
+def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,time_hms,input_features):
+    
+    training_set_repo = []
+    for i in hist_data_proxy_customers.keys():
+        df = copy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']])
+        training_set_repo.append(df[(df.index.hour == time_hms.hour) & (df.index.minute == time_hms.minute) & (df.index.second == time_hms.second)])
+
+    df = copy(customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']])
+    training_set_target = df[(df.index.hour == time_hms.hour) & (df.index.minute == time_hms.minute) & (df.index.second == time_hms.second)]
+
+    reg = LinearRegression().fit(
+                                    np.transpose(np.array(training_set_repo)),
+                                    np.array(training_set_target)       
+                                    )
+
+    # # # ## To get the linear regression parameters use the line below
+    # # LCoef = reg.coef_
+
+    proxy_set_repo = []
+    for i in hist_data_proxy_customers.keys():
+        df = copy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = 1)).strftime('%Y-%m-%d'):(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = input_features['Windows to be forecasted'])).strftime('%Y-%m-%d')]) 
+        proxy_set_repo.append(df[(df.index.hour == time_hms.hour) & (df.index.minute == time_hms.minute) & (df.index.second == time_hms.second)])
+
+    proxy_set_repo_ = np.transpose(np.array(proxy_set_repo))
+
+
+    pred =  pd.DataFrame(reg.predict(proxy_set_repo_),columns=['pred'])
+    pred['datetime']= proxy_set_repo[0].index
+
+    nmi = [customer.nmi] * len(pred)
+    pred['nmi'] = nmi
+
+    pred.set_index(['nmi', 'datetime'], inplace=True)   
+
+    return pred
+
+def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features):
+    
+    tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=input_features['data_freq'])[0:-1]
+    pred = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[0],input_features)
+
+    for t in range(1,len(tt)):
+        pred_temp = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[t],input_features)
+        pred = pd.concat([pred,pred_temp])
+
+    pred.sort_index(level = 1,inplace=True)
+
+    return (pred)
+
 
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
@@ -1805,3 +1870,57 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
 # canberra_weather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805920'
 
 
+
+
+
+
+# # # ================================================================
+# # # Method (3) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+# # # ================================================================
+
+# def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,target_customer,time_hms,input_features):
+    
+#     start_dd = (datetime.strptime(input_features['Start training'],'%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+#     dd = pd.date_range(start= start_dd+ f' {time_hms}',end=input_features['End training']+f' {time_hms}',freq='1D',tz='UTC').tz_convert('Australia/Sydney')
+
+#     set_diff = list( set( dd) - set(hist_data_proxy_customers[list(hist_data_proxy_customers.keys())[0]].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].index) )
+#     dd = dd.drop(set_diff)    
+
+#     reg = LinearRegression().fit(
+#                                     np.transpose(np.array(
+#                                         [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].loc[dd].tolist() for i in hist_data_proxy_customers.keys()]
+#                                                     )       ),
+#                                         np.array(target_customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].loc[dd].tolist()
+#                                                 )       
+#                                                     )
+
+
+#     # ## To get the linear regression parameters use the line below
+#     LCoef = reg.coef_
+#     ddd = pd.date_range(start= input_features['End training']+ f' {time_hms}',end=(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")+f' {time_hms}',freq='1D',tz='Australia/Sydney')
+#     To_be_predicted = np.transpose(np.array([hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['End training']:(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")].loc[ddd].tolist() 
+#                                                 for i in hist_data_proxy_customers.keys()]))
+
+#     pred =  pd.DataFrame(reg.predict(To_be_predicted),columns=['pred'])
+#     pred['datetime']= ddd
+
+#     nmi = [target_customer.nmi] * len(pred)
+#     pred['nmi'] = nmi
+
+#     # # pred.reset_index(inplace=True)
+#     pred.set_index(['nmi', 'datetime'], inplace=True)   
+
+#     return pred
+
+# def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features):
+    
+#     tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=input_features['data_freq'])[0:-1].strftime('%H:%M:%S')
+#     pred = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[0],input_features)
+
+#     for t in range(1,len(tt)):
+#         pred_temp = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[t],input_features)
+#         pred = pd.concat([pred,pred_temp])
+
+#     pred.sort_index(level = 1,inplace=True)
+
+#     return (pred)
