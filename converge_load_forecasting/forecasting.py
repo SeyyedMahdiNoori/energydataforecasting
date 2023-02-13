@@ -531,7 +531,7 @@ def forecast_pointbased_rectified_multiple_nodes(customers,input_features):
     return predictions_prallel
 
 # # ================================================================
-# # Method (2): Recursive multi-step probabilistic forecasting method
+# # Method (3): Recursive multi-step probabilistic forecasting method
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
@@ -583,7 +583,7 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
 
 # # ================================================================
-# # Method (3) Load_forecasting Using linear regression of Reposit data and smart meters
+# # Method (4) Load_forecasting Using linear regression of Reposit data and smart meters
 # # ================================================================
 def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_features):
 
@@ -615,7 +615,7 @@ def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_fea
 
 
 # # ================================================================
-# # Method (3) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+# # Method (5) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
 # # ================================================================
 
 def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,time_hms,input_features):
