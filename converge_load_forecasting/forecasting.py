@@ -30,13 +30,20 @@ from tsprial.forecasting import ForecastingChain
 from tsprial.forecasting import ForecastingStacked
 from sklearn.tree import DecisionTreeRegressor
 from tsprial.forecasting import ForecastingRectified
-
+from dateutil import parser
+from dateutil.tz import tzutc
 
 # Warnings configuration
 # ==============================================================================
 import warnings
 warnings.filterwarnings('ignore')
 
+def has_timezone(string):
+    try:
+        parsed_date = parser.parse(string)
+        return parsed_date.tzinfo is not None
+    except (TypeError, ValueError):
+        return False
 
 
 def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weatherdatapath=None,raw_weather_data=None,start_training=None,end_training=None,nmi_type_path=None,Last_observed_window=None,window_size=None,windows_to_be_forecasted=None,core_usage=None,db_url=None,db_table_names=None):
@@ -62,9 +69,13 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     # # ###### Pre-process the data ######
 
     # format datetime to pandas datetime format
-    # data['datetime'] = pd.to_datetime(data['datetime'])
-    data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True)
-    data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
+    
+    check_time_zone = has_timezone(data.datetime[0])
+    if check_time_zone == False:
+        data['datetime'] = pd.to_datetime(data['datetime'])
+    else:
+        data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True)
+        data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
 
     # Add weekday column to the data
     # data['DayofWeek'] = data['datetime'].dt.day_name()
@@ -138,14 +149,14 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
 
 
     if start_training is None:
-        input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d")
+        input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d %H:%M:%S")
     else:
-        input_features['Start training'] = start_training
+        input_features['Start training'] = start_training + ' ' + '00:00:00'
 
     if end_training is None:
-        input_features['End training'] =  (datetimes[-1] - timedelta(days=1)).strftime("%Y-%m-%d")
+        input_features['End training'] = (datetimes[-1] - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
     else:
-        input_features['End training'] = end_training
+        input_features['End training'] = end_training + ' ' + '00:00:00'
 
     if nmi_type_path is None:
         customers_nmi_with_pv = copy(customers_nmi)
@@ -162,7 +173,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     if Last_observed_window is None:
         input_features['Last-observed-window'] = input_features['End training']
     else:
-        input_features['Last-observed-window'] = Last_observed_window
+        input_features['Last-observed-window'] = Last_observed_window + ' ' + '00:00:00'
 
     if window_size is None:
         input_features['Window size'] = int(timedelta(days = 1) / (datetimes[1] - datetimes[0]))
@@ -181,10 +192,15 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     else:
         input_features['core_usage'] = core_usage
 
+    if check_time_zone == True:
+        datetimes.freq = input_features['data_freq']
+        data.index.levels[1].freq = input_features['data_freq']
 
     global Customers
 
     class Customers:
+        
+        check_time_zone_class = check_time_zone
         
         num_of_customers = 0
 
@@ -330,10 +346,22 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             
             input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
-            
-            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
+            if self.check_time_zone_class == True:
+                new_index =  pd.date_range(
+                                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                            freq=input_features['data_freq'],
+                                            tz="Australia/Sydney").delete(-1)
+            else:
+                new_index =  pd.date_range(
+                                start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                freq=input_features['data_freq']).delete(-1)
+
+            self.predictions = self.forecaster.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
+            
+        
         def generate_prediction_direct(self,input_features):
             """
             generate_prediction(self,input_features)
@@ -343,8 +371,19 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
             
-            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            self.predictions_direct = pd.DataFrame(self.forecaster_direct.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
+            if self.check_time_zone_class == True:
+                new_index =  pd.date_range(
+                                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                            freq=input_features['data_freq'],
+                                            tz="Australia/Sydney").delete(-1)
+            else:
+                new_index =  pd.date_range(
+                                start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                freq=input_features['data_freq']).delete(-1) 
+
+            self.predictions_direct = pd.DataFrame(self.forecaster_direct.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
         def generate_prediction_stacking(self,input_features):
             """
@@ -355,8 +394,19 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
             
-            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            self.predictions_stacking = pd.DataFrame(self.forecaster_stacking.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
+            if self.check_time_zone_class == True:
+                new_index =  pd.date_range(
+                                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                            freq=input_features['data_freq'],
+                                            tz="Australia/Sydney").delete(-1)
+            else:
+                new_index =  pd.date_range(
+                                start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                freq=input_features['data_freq']).delete(-1)            
+            
+            self.predictions_stacking = pd.DataFrame(self.forecaster_stacking.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
 
         def generate_prediction_rectified(self,input_features):
@@ -368,8 +418,19 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
             
-            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            self.predictions_rectified = pd.DataFrame(self.forecaster_rectified.predict(np.arange(input_features['Windows to be forecasted'] * input_features['Window size'])),index=new_index,columns=['pred'])
+            if self.check_time_zone_class == True:
+                new_index =  pd.date_range(
+                                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                            freq=input_features['data_freq'],
+                                            tz="Australia/Sydney").delete(-1)
+            else:
+                new_index =  pd.date_range(
+                                start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                freq=input_features['data_freq']).delete(-1) 
+
+            self.predictions_rectified = pd.DataFrame(self.forecaster_rectified.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
         def generate_interval_prediction(self,input_features):
             """
@@ -382,11 +443,21 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             """
 
             # Create a time-index for the dates that are being predicted
-            new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            
-            # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-            self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(new_index)
+            if self.check_time_zone_class == True:
+                new_index =  pd.date_range(
+                                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                            freq=input_features['data_freq'],
+                                            tz="Australia/Sydney").delete(-1)
+            else:
+                new_index =  pd.date_range(
+                                start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                                end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                                freq=input_features['data_freq']).delete(-1)       
 
+            # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
+            self.interval_predictions = self.forecaster.predict_interval(steps=len(new_index), interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).set_index(new_index)
+            # self.predictions                   = self.forecaster.predict(steps=len(new_index),                                    last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
         def generate_disaggregation_using_reactive(self):
 
@@ -666,6 +737,32 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
     pred.sort_index(level = 1,inplace=True)
 
     return (pred)
+
+
+    # # ================================================================
+    # # Method (6) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+    # # ================================================================
+
+def forecast_pointbased_exog_reposit_single_node(customer,input_features,customers_rep):
+    
+
+    cus_rep = pd.concat([customers_rep[i].data.active_power for i in customers_rep.keys()],axis=1)
+    for name in range(0,len(cus_rep.columns.values)):
+        cus_rep.columns.values[name] = f'{cus_rep.columns.values[name]}_{name}'
+
+    customer.forecaster = ForecasterAutoreg(
+            regressor = make_pipeline(StandardScaler(), Ridge()),  
+            lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+        )
+
+    customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+                            exog = cus_rep.loc[input_features['Start training']:input_features['End training']])
+
+    new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
+    customer.predictions = customer.forecaster.predict(steps = input_features['Windows to be forecasted'] * input_features['Window size'],
+                                                        exog = cus_rep.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
+
+    return customer.predictions
 
 
 # # ==================================================================================================# # ==================================================================================================

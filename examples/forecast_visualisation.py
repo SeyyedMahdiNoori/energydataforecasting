@@ -14,7 +14,7 @@ from converge_load_forecasting import initialise
 
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-27',Last_observed_window='2018-12-27',windows_to_be_forecasted=3)
+data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',windows_to_be_forecasted=1)
 
 
 # ################
@@ -26,8 +26,8 @@ nmi = customers_nmi_with_pv[10]
 
 
 
-# Time series plot
-# ==============================================================================
+# # Time series plot
+# # ==============================================================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
 plt.xlabel("Date")
@@ -119,7 +119,7 @@ customers[nmi].generate_forecaster(input_features)
 customers[nmi].generate_prediction(input_features)
 predictions= customers[nmi].predictions
 fig, ax = plt.subplots(figsize=(12, 4.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
 ax.set_title('Prediction vs real demand')
 ax.legend()
@@ -141,11 +141,11 @@ customers[nmi].generate_prediction(input_features)
 predictions_optimised= customers[nmi].predictions
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index].plot(ax=ax, linewidth=2, label='real')
 predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
 predictions_optimised.pred.plot(linewidth=2, label='prediction-optimised', ax=ax)
 
-y_true = np.array(list(customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index.strftime('%m/%d/%Y').min():predictions.index.strftime('%m/%d/%Y').max()]))
+y_true = np.array(list(customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index]))
 y_pred = np.array(list(predictions.pred))
 y_pred_optimised = np.array(list(predictions_optimised.pred))
 mses = ((y_true-y_pred)**2).mean()
@@ -167,7 +167,7 @@ customers[nmi].generate_interval_prediction(input_features)
 predictions_interval= customers[nmi].interval_predictions
 
 fig, ax=plt.subplots(figsize=(11, 4.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index.strftime('%m/%d/%Y').min():predictions_interval.index.strftime('%m/%d/%Y').max()].plot(ax=ax, linewidth=2, label='real')
+customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index].plot(ax=ax, linewidth=2, label='real')
 ax.fill_between(
     predictions_interval.index,
     predictions_interval['lower_bound'],
@@ -184,4 +184,5 @@ ax.set_title('Energy demand forecast')
 ax.legend()
 # plt.savefig('Real_vs_pred_interval.eps', format='eps')
 plt.show()   
+   
   
