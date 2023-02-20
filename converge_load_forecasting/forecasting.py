@@ -38,7 +38,11 @@ from dateutil.tz import tzutc
 import warnings
 warnings.filterwarnings('ignore')
 
+# A function to decide whether a string in the form of datetime has a time zone or not
 def has_timezone(string):
+    '''
+    has_timezone(string) accept string in the form of datetime and return True if it has timezone, and it returns False otherwise.
+    '''
     try:
         parsed_date = parser.parse(string)
         return parsed_date.tzinfo is not None
@@ -67,9 +71,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     
 
     # # ###### Pre-process the data ######
-
     # format datetime to pandas datetime format
-    
     check_time_zone = has_timezone(data.datetime[0])
     if check_time_zone == False:
         data['datetime'] = pd.to_datetime(data['datetime'])
@@ -89,7 +91,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
     # save unique dates of the data
     datetimes = data.index.unique('datetime')
 
-
+    # read and process weather data if it has been inputted
     if weatherdatapath is None and raw_weather_data is None:
         data_weather = {}
     elif weatherdatapath is not None:
@@ -107,9 +109,12 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
         data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
         data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
 
+        # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
+        # weather data is going to be used for learning
         set_diff = list( set(data_weather.index)-set( datetimes) )
         data_weather = data_weather.drop(set_diff)
-
+        
+        # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
         set_diff = list( set( datetimes) - set(data_weather.index) )
         for i in range(0,len(set_diff)):
             data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
@@ -140,24 +145,30 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
                                     ],ignore_index=False)
 
+    # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
+    # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
+    # defeault values will be used to fill in the gap. 
     input_features = {}
 
+    # The parameters to be forecasted. It should be a column name in the input data.
     if forecasted_param is None:
         input_features['Forecasted_param'] = 'active_power'
     else:
         input_features['Forecasted_param'] = forecasted_param
 
-
+    # The datetime index that training starts from
     if start_training is None:
         input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d %H:%M:%S")
     else:
         input_features['Start training'] = start_training + ' ' + '00:00:00'
 
+    # The last datetime index used for trainning.
     if end_training is None:
         input_features['End training'] = (datetimes[-1] - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
     else:
         input_features['End training'] = end_training + ' ' + '00:00:00'
 
+    # Select customers with pv. This is used to read the "nmi.csv" file, used in the Converge project.
     if nmi_type_path is None:
         customers_nmi_with_pv = copy(customers_nmi)
     else:
@@ -170,23 +181,29 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
         data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
         data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
 
+    # The last obersved window. The forecasting values are generated after this time index.
     if Last_observed_window is None:
         input_features['Last-observed-window'] = input_features['End training']
     else:
         input_features['Last-observed-window'] = Last_observed_window + ' ' + '00:00:00'
 
+    # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
+    # For example, for a data with resolution 30th minutely, the window size woul be 48.
     if window_size is None:
         input_features['Window size'] = int(timedelta(days = 1) / (datetimes[1] - datetimes[0]))
     else:
         input_features['Window size'] = window_size
 
+    # The number of days to be forecasted.
     if windows_to_be_forecasted is None:
         input_features['Windows to be forecasted'] = 1
     else:
         input_features['Windows to be forecasted'] = windows_to_be_forecasted
 
+    # Data forequency.
     input_features['data_freq'] = datetimes[0:3].inferred_freq
 
+    # number of processes parallel programming.
     if core_usage is None:
         input_features['core_usage'] = 8
     else:
@@ -196,6 +213,8 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
         datetimes.freq = input_features['data_freq']
         data.index.levels[1].freq = input_features['data_freq']
 
+    # Customers is a class. An instant is assigned to each customer with its data. Most of the forecasting functions are then defined 
+    # as methods within this class.
     global Customers
 
     class Customers:
@@ -211,37 +230,30 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
 
             Customers.num_of_customers += 1
 
-        def generate_forecaster(self,input_features):
-            
+        def generate_forecaster_autoregressive(self,input_features):            
             """
-            generate_forecaster(self,input_features)
+            generate_forecaster_autoregressive(input_features)
             
-            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
+            This function generates a forecaster object to be used for a autoregressive recursive multi-step forecasting method. 
             It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
             have different objective can be used with the same parameters.
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
             # Create a forecasting object
-            self.forecaster = ForecasterAutoreg(
+            self.forecaster_autoregressive = ForecasterAutoreg(
                     regressor = make_pipeline(StandardScaler(), Ridge()),  
-                    lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+                    lags      = input_features['Window size']      
                 )
 
             # Train the forecaster using the train data
-            self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+            self.forecaster_autoregressive.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
-        def generate_forecaster_direct(self,input_features):
-            
+        def generate_forecaster_direct(self,input_features):            
             """
-            generate_forecaster(self,input_features)
+            generate_forecaster_direct(self,input_features)
             
-            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
-            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-            have different objective can be used with the same parameters.
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function generates a forecaster object to be used for a multi-step forecasting method. 
+            More details about this approach can be found in "https://robjhyndman.com/papers/rectify.pdf" and "https://towardsdatascience.com/6-methods-for-multi-step-forecasting-823cbde4127a"
             """
 
             self.forecaster_direct = ForecastingChain(
@@ -253,16 +265,12 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
                                             )
             self.forecaster_direct.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
-        def generate_forecaster_stacking(self,input_features):
-            
+        def generate_forecaster_stacking(self,input_features):            
             """
-            generate_forecaster(self,input_features)
+            generate_forecaster_stacking(self,input_features)
             
-            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
-            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-            have different objective can be used with the same parameters.
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function generates a forecaster object to be used for a multi-step forecasting method. 
+            More details about this approach can be found in "https://towardsdatascience.com/6-methods-for-multi-step-forecasting-823cbde4127a"
             """
 
             self.forecaster_stacking = ForecastingStacked(
@@ -274,16 +282,12 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             self.forecaster_stacking.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
 
-        def generate_forecaster_rectified(self,input_features):
-            
+        def generate_forecaster_rectified(self,input_features):            
             """
-            generate_forecaster(self,input_features)
+            generate_forecaster_rectified(self,input_features)
             
-            This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
-            It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-            have different objective can be used with the same parameters.
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function generates a forecaster object to be used for a multi-step forecasting method. 
+            More details about this approach can be found in "https://robjhyndman.com/papers/rectify.pdf" and "https://towardsdatascience.com/6-methods-for-multi-step-forecasting-823cbde4127a"
             """
 
             self.forecaster_rectified = ForecastingRectified(
@@ -296,8 +300,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             self.forecaster_rectified.fit(None, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
 
-        def generate_optimised_forecaster_object(self,input_features):
-            
+        def generate_optimised_forecaster_object(self,input_features):            
             """
             generate_optimised_forecaster_object(self,input_features)
             
@@ -305,8 +308,6 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             It builds on function Generate\_forecaster\_object by combining grid search strategy with backtesting to identify the combination of lags 
             and hyperparameters that achieve the best prediction performance. As default, it is based on a linear least squares with \textit{l2} regularisation method. 
             Alternatively, it can use LinearRegression() and Lasso() methods to generate the forecaster object.
-
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
             # This line is used to hide the bar in the optimisation process
@@ -338,15 +339,14 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
                     )
             
 
-        def generate_prediction(self,input_features):
+        def generate_prediction_autoregressive(self,input_features):
             """
-            generate_prediction(self,input_features)
+            generate_prediction_autoregressive(self,input_features)
             
-            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function outputs the prediction values using a Recursive autoregressive multi-step point-forecasting method.          
             """
-
+            
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
             if self.check_time_zone_class == True:
                 new_index =  pd.date_range(
                                             start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
@@ -359,18 +359,17 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
                                 end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
                                 freq=input_features['data_freq']).delete(-1)
 
-            self.predictions = self.forecaster.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
+            self.predictions_autoregressive = self.forecaster_autoregressive.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
             
         
         def generate_prediction_direct(self,input_features):
             """
             generate_prediction(self,input_features)
             
-            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function outputs the prediction values using a Recursive direct multi-step point-forecasting method.  
             """
             
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
             if self.check_time_zone_class == True:
                 new_index =  pd.date_range(
                                             start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
@@ -389,11 +388,10 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             """
             generate_prediction(self,input_features)
             
-            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function outputs the prediction values using a Recursive stacking multi-step point-forecasting method. 
             """
             
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
             if self.check_time_zone_class == True:
                 new_index =  pd.date_range(
                                             start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
@@ -413,11 +411,10 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             """
             generate_prediction(self,input_features)
             
-            This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
-            
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
+            This function outputs the prediction values using a Recursive rectified multi-step point-forecasting method. 
             """
             
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
             if self.check_time_zone_class == True:
                 new_index =  pd.date_range(
                                             start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
@@ -438,11 +435,9 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             
             This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
             The confidence level can be set in the function parameters as "interval = [10, 90]".
-        
-            input_features is a dictionary. To find an example of its format refer to the read_data.py file
             """
 
-            # Create a time-index for the dates that are being predicted
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
             if self.check_time_zone_class == True:
                 new_index =  pd.date_range(
                                             start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
@@ -456,11 +451,22 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
                                 freq=input_features['data_freq']).delete(-1)       
 
             # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-            self.interval_predictions = self.forecaster.predict_interval(steps=len(new_index), interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).set_index(new_index)
+            self.interval_predictions = self.forecaster_autoregressive.predict_interval(steps=len(new_index),
+                                                                         interval = [10, 90],
+                                                                         n_boot = 1000,
+                                                                         last_window = self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]
+                                                                         ).set_index(new_index)
             # self.predictions                   = self.forecaster.predict(steps=len(new_index),                                    last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
-        def generate_disaggregation_using_reactive(self):
 
+        def generate_disaggregation_using_reactive(self):
+            '''
+            generate_disaggregation_using_reactive()
+
+            Dissaggregate the solar generation and demand from the net real power measurement at the connection point.
+            This approach uses reactive power as an indiction. More about this approach can be found in "Customer-Level Solar-Demand Disaggregation: The Value of Information".
+            '''
+            
             QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
             QP_coeff[pd.Timestamp((QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d"))] = QP_coeff[-1]
             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
@@ -480,6 +486,14 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             self.data['demand_disagg'] = load_est
 
         def Generate_disaggregation_positive_minimum_PV(self):
+            '''
+            generate_disaggregation_using_reactive()
+            
+            Dissaggregate the solar generation and demand from the net real power measurement at the connection point.
+            This approach uses the negative and possitive values in the net measurement and assumes the minimum possible PV generation values.
+            More about this approach can be found in "Customer-Level Solar-Demand Disaggregation: The Value of Information".
+            '''
+
             D = copy(self.data.active_power)
             D[D<=0] = 0
             S = copy(self.data.active_power)
@@ -487,6 +501,7 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
             self.data['pv_disagg'] =  - S
             self.data['demand_disagg'] = D
 
+    # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
     customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
 
     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features
@@ -498,42 +513,41 @@ def initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weathe
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
 
-# # This function is used to parallelised the forecasting for each nmi
-# def pool_executor_parallel(function_name,repeat_iter,input_features):
-#     with ThreadPoolExecutor(max_workers=10) as executor:
-#         results = list(executor.map(function_name,repeat_iter,repeat(input_features)))  
-#     return results
-
 def pool_executor_parallel(function_name,repeat_iter,input_features):
-        with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-            results = list(executor.map(function_name,repeat_iter,repeat(input_features)))  
-        return results
+    '''
+    pool_executor_parallel(function_name,repeat_iter,input_features)
+    
+    This function is used to parallelised the forecasting for each nmi
+    '''
+    with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
+        results = list(executor.map(function_name,repeat_iter,repeat(input_features)))  
+    return results
 
 
 # # ================================================================
-# # Method (1): Recursive multi-step point-forecasting method
+# # Autoregressive recursive multi-step point-forecasting method
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
-def forecast_pointbased_single_node(customer,input_features):
-
+def forecast_pointbased_autoregressive_single_node(customer,input_features):
     """
-    run_prallel_forecast_pointbased(customers_nmi,input_features)
+    forecast_pointbased_autoregressive_single_node(customers_nmi,input_features)
 
-    This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
+    This function generates forecasting values for each customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
     """
     
-    # print(customers)
+    # print(customer's nmi)
     print(" Customer nmi: {first}".format(first = customer.nmi))
 
     # Train a forecasting object
-    customer.generate_forecaster(input_features)
+    customer.generate_forecaster_autoregressive(input_features)
     
     # Generate predictions 
-    customer.generate_prediction(input_features)
+    customer.generate_prediction_autoregressive(input_features)
 
-    result = customer.predictions
+    result = customer.predictions_autoregressive
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)
@@ -542,14 +556,16 @@ def forecast_pointbased_single_node(customer,input_features):
 
     return result
 
-    # return customer.predictions
 
-    # return customer.predictions.rename(columns={'pred': customer.nmi})
+def forecast_pointbased_autoregressive_multiple_nodes(customers,input_features):
+    """
+    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
-
-def forecast_pointbased_multiple_nodes(customers,input_features):
-
-    predictions_prallel = pool_executor_parallel(forecast_pointbased_single_node,customers.values(),input_features)
+    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_autoregressive_single_node,customers.values(),input_features)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -557,17 +573,17 @@ def forecast_pointbased_multiple_nodes(customers,input_features):
 
 
 # # ================================================================
-# # Method (2): Recitifed Recursive multi-step point-forecasting method
+# # Recitifed recursive multi-step point-forecasting method
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
 def forecast_pointbased_rectified_single_node(customer,input_features):
-
     """
-    run_prallel_forecast_pointbased(customers_nmi,input_features)
+    forecast_pointbased_rectified_single_node(customers_nmi,input_features)
 
-    This functions (along with function pool_executor_forecast_pointbased) are used to parallelised forecast_pointbased() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
+    This function generates forecasting values for each customer using the rectified recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
     """
     
     # print(customers)
@@ -588,12 +604,15 @@ def forecast_pointbased_rectified_single_node(customer,input_features):
 
     return result
 
-    # return customer.predictions
-
-    # return customer.predictions.rename(columns={'pred': customer.nmi})
-
 
 def forecast_pointbased_rectified_multiple_nodes(customers,input_features):
+    """
+    forecast_pointbased_rectified_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the rectified recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
 
     predictions_prallel = pool_executor_parallel(forecast_pointbased_rectified_single_node,customers.values(),input_features)
  
@@ -601,25 +620,123 @@ def forecast_pointbased_rectified_multiple_nodes(customers,input_features):
 
     return predictions_prallel
 
+
 # # ================================================================
-# # Method (3): Recursive multi-step probabilistic forecasting method
+# # Direct recursive multi-step point-forecasting method
+# # ================================================================
+
+# This function outputs the forecasting for each nmi
+def forecast_pointbased_direct_single_node(customer,input_features):
+    """
+    forecast_pointbased_direct_single_node(customers_nmi,input_features)
+
+    This function generates forecasting values for each customer using the Direct recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    
+    # print(customers)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    # Train a forecasting object
+    customer.generate_forecaster_direct(input_features)
+    
+    # Generate predictions 
+    customer.generate_prediction_direct(input_features)
+
+    result = customer.predictions_direct
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
+
+def forecast_pointbased_direct_multiple_nodes(customers,input_features):
+    """
+    forecast_pointbased_direct_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the Direct recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_direct_single_node,customers.values(),input_features)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
+
+# # ================================================================
+# # Stacking recursive multi-step point-forecasting method
+# # ================================================================
+
+# This function outputs the forecasting for each nmi
+def forecast_pointbased_stacking_single_node(customer,input_features):
+    """
+    forecast_pointbased_stacking_single_node(customers_nmi,input_features)
+
+    This function generates forecasting values for each customer using the Stacking recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    
+    # print(customers)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    # Train a forecasting object
+    customer.generate_forecaster_stacking(input_features)
+    
+    # Generate predictions 
+    customer.generate_prediction_stacking(input_features)
+
+    result = customer.predictions_stacking
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
+
+def forecast_pointbased_stacking_multiple_nodes(customers,input_features):
+    """
+    forecast_pointbased_stacking_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the Stacking recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_stacking_single_node,customers.values(),input_features)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
+
+
+# # ================================================================
+# # Recursive multi-step probabilistic forecasting method
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
 def forecast_inetervalbased_single_node(customer,input_features):
-
     """
-    run_prallel_Interval_Load_Forecast(customers_nmi,input_features)
+    forecast_inetervalbased_single_node(customers_nmi,input_features)
 
-    This functions (along with function pool_executor_forecast_interval) are used to parallelised forecast_interval() function for each nmi. It accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
+    This function generates forecasting values for each customer using the interval-based recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
     """
 
     print(" Customer nmi: {first}".format(first = customer.nmi))
 
 
     # Train a forecasting object
-    customer.generate_forecaster(input_features)
+    customer.generate_forecaster_autoregressive(input_features)
     
     # Generate interval predictions 
     customer.generate_interval_prediction(input_features)
@@ -633,18 +750,13 @@ def forecast_inetervalbased_single_node(customer,input_features):
 
     return result
 
-# This function uses the parallelised function and save the result into a single dictionary 
 def forecast_inetervalbased_multiple_nodes(customers,input_features):
-
     """
-    forecast_interval(customers_nmi,input_features) 
+    forecast_inetervalbased_multiple_nodes(customers_nmi,input_features)
 
-    This function generates prediction values for all the nmis using a recursive multi-step probabilistic forecasting method. It uses function pool_executor_forecast_interval to generate
-    the predictions for each nmi parallely (each on a separate core). This function accepts the list "customers_nmi", and the dictionary 
-    "input_features" as inputs. Examples of the list and the dictionary used in this function can be found in the read_data.py file.
-
-    This function return the forecasted values for the lower bound, upper bound and the most likely values of the desired parameter specified in the input_feature['Forecasted_param'] for the dates specified in the input_feature dictionary for 
-    all the nmis in pandas.Dataframe format.
+    This function generates forecasting values multiple customer using the Interval-based recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
     """
 
     predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features)
@@ -652,12 +764,22 @@ def forecast_inetervalbased_multiple_nodes(customers,input_features):
 
     return predictions_prallel
 
-
 # # ================================================================
-# # Method (4) Load_forecasting Using linear regression of Reposit data and smart meters
+# # Load_forecasting Using linear regression of Reposit data and smart meters
 # # ================================================================
-def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_features):
+def forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer,input_features):
+    """
+    forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_features)
 
+    This function generates forecasting values a customer using the some customers real-time measurements as proxies for a target customer.
+    It generates a linear function mapping the real-time measurements from know customers to the target customer values.
+
+    It requires three inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
+    The second input is the target customer instance generated by the initilase function.
+    And, the third input is the input_features which is a dictionary of input preferences generated by the initilase function.
+    """
+
+    # Create a LinearRegression function from the historical data of proxy and target customers
     reg = LinearRegression().fit(
                                 np.transpose(np.array(
                                     [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].tolist() for i in hist_data_proxy_customers.keys()]
@@ -668,12 +790,15 @@ def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_fea
     ### To get the linear regression parameters use the line below
     # LCoef = reg.coef_
 
-    proxy_meas_repo = [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = 1)).strftime('%Y-%m-%d'):(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = input_features['Windows to be forecasted'])).strftime('%Y-%m-%d')] for i in hist_data_proxy_customers.keys()]
+    # real-time measurment of of proxy customers
+    datetimes = customer.data.index
+    proxy_meas_repo = [ hist_data_proxy_customers[i].data[input_features['Forecasted_param']][
+            (datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])).strftime('%Y-%m-%d %H:%M:%S'):
+            (datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')] for i in hist_data_proxy_customers.keys()]
+
     proxy_meas_repo_ = np.transpose(np.array(proxy_meas_repo))
 
     pred =  pd.DataFrame(reg.predict(proxy_meas_repo_),columns=['pred'])
-
-    # new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
     pred['datetime']= proxy_meas_repo[0].index
     
     nmi = [customer.nmi] * len(pred)
@@ -686,11 +811,22 @@ def forecast_lin_reg_proxy_measures(hist_data_proxy_customers,customer,input_fea
 
 
 # # ================================================================
-# # Method (5) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+# # Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
 # # ================================================================
 
-def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,time_hms,input_features):
-    
+def pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,time_hms,input_features):
+    """
+    pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,input_features)
+
+    This function generates forecasting values for a customer at using the some customers real-time measurements as proxies for a target customer.
+    It generates a linear function mapping the each time-step of real-time measurements from know customers to the same time-step target customer values.
+
+    It requires four inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
+    The second input is the target customer instance generated by the initilase function.
+    The third input is the time-step we wish to foreacast.
+    And, the fourth input is the input_features which is a dictionary of input preferences generated by the initilase function.
+    """
+
     training_set_repo = []
     for i in hist_data_proxy_customers.keys():
         df = copy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']])
@@ -706,10 +842,13 @@ def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,time_
 
     # # # ## To get the linear regression parameters use the line below
     # # LCoef = reg.coef_
-
+    
+    datetimes = customer.data.index
     proxy_set_repo = []
     for i in hist_data_proxy_customers.keys():
-        df = copy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = 1)).strftime('%Y-%m-%d'):(datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d') + timedelta(days = input_features['Windows to be forecasted'])).strftime('%Y-%m-%d')]) 
+        df = copy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][
+            (datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])).strftime('%Y-%m-%d %H:%M:%S'):
+            (datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')]) 
         proxy_set_repo.append(df[(df.index.hour == time_hms.hour) & (df.index.minute == time_hms.minute) & (df.index.second == time_hms.second)])
 
     proxy_set_repo_ = np.transpose(np.array(proxy_set_repo))
@@ -726,12 +865,23 @@ def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,time_
     return pred
 
 def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features):
+    """
+    pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,input_features)
+
+    This function generates forecasting values for a customer at using the some customers real-time measurements as proxies for a target customer.
+    It combines the forecasting values generated by the function pred_each_time_step_repo_linear_reg_single_node() for each time-step of the day.
+
+    It requires three inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
+    The second input is the target customer instance generated by the initilase function.
+    And, the third input is the input_features which is a dictionary of input preferences generated by the initilase function.
+    """
     
+    # generates a pandas datetime index with the same resolution of the original data. The start and end values used in tt are arbitrarily.
     tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=input_features['data_freq'])[0:-1]
-    pred = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[0],input_features)
+    pred = pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,tt[0],input_features)
 
     for t in range(1,len(tt)):
-        pred_temp = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[t],input_features)
+        pred_temp = pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,tt[t],input_features)
         pred = pd.concat([pred,pred_temp])
 
     pred.sort_index(level = 1,inplace=True)
@@ -739,30 +889,64 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
     return (pred)
 
 
-    # # ================================================================
-    # # Method (6) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
-    # # ================================================================
+# # ================================================================
+# # Load_forecasting Using linear regression of Reposit data and smart meter
+# # ================================================================
 
-def forecast_pointbased_exog_reposit_single_node(customer,input_features,customers_rep):
-    
+def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features):
+    """
+    forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features)
 
-    cus_rep = pd.concat([customers_rep[i].data.active_power for i in customers_rep.keys()],axis=1)
+    This function generates forecasting values for a customer at using the some customers real-time measurements as proxies for a target customer.
+    It uses the same the sk-forecast built in function that allows to use exogenous variables when forecasting a target customer. 
+    More about this function can be found in "https://joaquinamatrodrigo.github.io/skforecast/0.4.3/notebooks/autoregresive-forecaster-exogenous.html".
+
+    It requires three inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
+    The second input is the target customer instance generated by the initilase function.
+    And, the third input is the input_features which is a dictionary of input preferences generated by the initilase function.
+    """    
+
+    cus_rep = pd.concat([hist_data_proxy_customers[i].data.active_power for i in hist_data_proxy_customers.keys()],axis=1)
     for name in range(0,len(cus_rep.columns.values)):
         cus_rep.columns.values[name] = f'{cus_rep.columns.values[name]}_{name}'
 
     customer.forecaster = ForecasterAutoreg(
             regressor = make_pipeline(StandardScaler(), Ridge()),  
-            lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+            lags      = input_features['Window size']     
         )
 
     customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
                             exog = cus_rep.loc[input_features['Start training']:input_features['End training']])
 
-    new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-    customer.predictions = customer.forecaster.predict(steps = input_features['Windows to be forecasted'] * input_features['Window size'],
-                                                        exog = cus_rep.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
+    datetimes = customer.data.index
 
-    return customer.predictions
+    check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
+    if check_time_zone_ == True:
+        new_index =  pd.date_range(
+                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                        freq=input_features['data_freq'],
+                        tz="Australia/Sydney").delete(-1)
+    else:
+        new_index =  pd.date_range(
+                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
+                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ timedelta(days=input_features['Windows to be forecasted']),
+                        freq=input_features['data_freq']).delete(-1)
+
+    customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
+                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                       exog = cus_rep.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
+    
+
+    result = customer.predictions_exog_rep
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
 
 
 # # ==================================================================================================# # ==================================================================================================
@@ -1463,561 +1647,3 @@ def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_wea
         del(shared_weather_data)
 
     return(predictions_prallel)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # Set features of the predections
-# input_features = {  'file_type': 'Converge',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 4       # 1/core_usage shows core percentage usage we want to use
-#                      }
-
-# # Set features of the predections
-# input_features = {  'file_type': 'NextGen',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 6      }  
-
-# # from read_data_init import input_features
-# [data, customers_nmi,customers_nmi_with_pv,datetimes, customers] = read_data(input_features)
-
-
-
-
-
-
-# # ================================================================
-# # To be tested techniques
-# # ================================================================
-
-
-### To be tested: This function uses the linear regression model which is built-in the sklearn librarry to find a linear relation between the PV system size and solar generation at each time step for all the nodes.
-### I think it should work almost exactly the same as technique 2 as it uses the same assumptions. But it requires more testing to be sure.
-# def generate_disaggregation_regression(customers,customers_nmi,customers_nmi_with_pv,datetimes):
-
-#     """
-#     generate_disaggregation_regression(customers)
-    
-#     This function uses a linear regression model to disaggregate the electricity demand from PV generation in the data. 
-#     Note that the active power stored in the data is recorded at at each \textit{nmi} connection point to the grid and thus 
-#     is summation all electricity usage and generation that happens behind the meter. 
-#     """
-
-#     pv = [ Ridge(alpha=1.0).fit( np.array([customers[i].data.pv_system_size[datetimes[0]]/customers[i].data.active_power.max()  for i in customers_nmi_with_pv]).reshape((-1,1)),
-#                             np.array([customers[i].data.active_power[datetimes[t]]/customers[i].data.active_power.max() for i in customers_nmi_with_pv])     
-#                             ).coef_[0]   for t in range(0,len(datetimes))]
-
-#     for i in customers_nmi_with_pv:
-#         customers[i].data['pv_disagg'] = [ pv[t]*customers[i].data.pv_system_size[datetimes[0]] + min(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
-#         customers[i].data['demand_disagg'] = [max(customers[i].data.active_power[datetimes[t]] + pv[t]*customers[i].data.pv_system_size[datetimes[0]],0) for t in range(0,len(datetimes))]
-
-#     for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-#         customers[i].data['pv_disagg'] = 0
-#         customers[i].data['demand_disagg'] = customers[customers_nmi[0]].data.active_power.values
-
-
-### To be tested 
-# def Forecast_using_disaggregation(data,input_features,datetimes,customers_nmi_with_pv,customers_nmi,customers):
-
-#     """
-#     Forecast_using_disaggregation(customers_nmi,input_features)
-
-#     This function is used to generate forecast values. It first disaggregates the demand and generation for all nmi using function
-#     Generate_disaggregation_optimisation (technique 2). It then uses function forecast_pointbased for the disaggregated demand and generation and produces separate forecast. It finally sums up the two values
-#     and returns an aggregated forecast for all nmis in pandas.Dataframe format.
-#     """
-    
-#     opt_disaggregate = disaggregation_optimisation(data,input_features,datetimes,customers_nmi_with_pv)
-
-#     for i in customers_nmi_with_pv:
-#         customers[i].data['pv_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
-#         customers[i].data['demand_disagg'] = opt_disaggregate.loc[i].pv_disagg.values
-
-#     for i in list(set(customers_nmi) - set(customers_nmi_with_pv)):
-#         customers[i].data['pv_disagg'] = 0
-#         customers[i].data['demand_disagg'] = customers[i].data.active_power.values
-
-
-#     input_features_copy = copy(input_features)
-#     input_features_copy['Forecasted_param']= 'pv_disagg'
-#     predictions_output_pv = forecast_pointbased(customers,input_features_copy)
-
-#     input_features_copy['Forecasted_param']= 'demand_disagg'
-#     predictions_output_demand = forecast_pointbased(customers,input_features_copy)
-
-#     predictions_agg = predictions_output_demand + predictions_output_pv
-
-#     return(predictions_agg)
-
-
-
-#### Approach to be tested
-# def disaggregation_single_known_pvs_pos_pv(nmi,known_pv_nmis,customers,datetimes):
-
-#     model=ConcreteModel()
-#     model.pv_cites = Set(initialize=known_pv_nmis)
-#     model.Time = Set(initialize=range(0,len(datetimes)))
-#     model.weight=Var(model.pv_cites, bounds=(0,1))
-#     model.irrid=Var(range(0,len(datetimes)),bounds=(0,1))
-
-#     # # Constraints
-#     def load_balance(model):
-#         return sum(model.weight[i] for i in model.pv_cites) == 1 
-#     model.cons = Constraint(rule=load_balance)
-
-#     def pv_irrid(model,t):
-#         return model.irrid[t] == sum(model.weight[i] * customers[i].data.pv[datetimes[t]]/customers[i].data.pv_system_size[0] for i in model.pv_cites)
-#     model.cons_pv = Constraint(model.Time,rule=pv_irrid)
-
-#     # Objective
-#     def obj_rule(model):
-#         return  sum( (model.irrid[t] - max(-customers[nmi].data.active_power[datetimes[t]],0)/customers[nmi].data.pv_system_size[0] )**2
-#                       for t in model.Time)
-
-#     model.obj=Objective(rule=obj_rule)
-
-#     # # Solve the model
-#     opt = SolverFactory('gurobi')
-#     opt.solve(model)
-
-#     return pd.Series([model.irrid[t].value * customers[nmi].data.pv_system_size[0] for t in model.Time],index=customers[nmi].data.index)
-
-
-
-
-# # ================================================================
-# # Older read data function (saved here for backup)
-# # ================================================================
-# def read_data(input_features):
-#     if input_features['file_type'] == 'Converge':
-
-#         # Read data
-#         data = pd.read_csv(input_features['data_path'])
-
-#         # # ###### Pre-process the data ######
-
-#         # format datetime to pandas datetime format
-#         data['datetime'] = pd.to_datetime(data['datetime'])
-
-#         # Add weekday column to the data
-#         data['DayofWeek'] = data['datetime'].dt.day_name()
-
-#         # Save customer nmis in a list
-#         customers_nmi = list(dict.fromkeys(data['nmi'].values.tolist()))
-
-#         # # *** Temporary *** the last day of the data (2022-07-31)
-#         # # is very different from the rest, and is ommitted for now.
-#         # filt = (data['datetime'] < '2022-07-31')
-#         # data = data.loc[filt].copy()
-
-#         # Make datetime index of the dataset
-#         data.set_index(['nmi', 'datetime'], inplace=True)
-
-#         # save unique dates of the data
-#         datetimes = data.index.unique('datetime')
-
-#         # To obtain the data for each nmi: --> data.loc[nmi]
-#         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
-
-
-#         # Add PV instalation and size, and load type to the data from nmi.csv file
-#         # ==============================================================================
-#         # nmi_available = [i for i in customers_nmi if (data_nmi['nmi'] ==  i).any()] # use this line if there are some nmi's in the network that are not available in the nmi.csv file
-#         data_nmi = pd.read_csv(input_features['nmi_type_path'])
-#         data_nmi.set_index(data_nmi['nmi'],inplace=True)
-
-#         import itertools
-#         customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
-#         data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
-#         data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
-#         data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
-
-#         # # This line is added to prevent the aggregated demand from being negative when there is not PV
-#         # # Also, from the data, it seems that negative sign is a mistake and the positive values make more sense in those nmis
-#         # # for i in customers_nmi:
-#         # #     if data.loc[i].pv_system_size[0] == 0:
-#         # #         data.at[i,'active_power'] = data.loc[i].active_power.abs()
-
-#         # # # TBA
-#         data_weather = {}
-        
-#     elif input_features['file_type'] == 'NextGen':
-
-#         # with open(input_features['file_name'], 'rb') as handle:
-#         #     data = pickle.load(handle)
-#         # data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
-
-
-#         data = pd.read_csv(input_features['file_path'])
-#         # data = data[~data.index.duplicated(keep='first')]
-#         data.rename(columns={'load_reactive': 'reactive_power'},inplace=True)
-        
-#         # format datetime to pandas datetime format
-#         data['datetime'] = pd.to_datetime(data['datetime'])
-        
-#         # Make datetime index of the dataset
-#         data.set_index(['nmi', 'datetime'], inplace=True)
-
-#         datetimes = data.loc[data.index[0][0]].index
-#         customers_nmi = list(data.loc[pd.IndexSlice[:, datetimes[0]], :].index.get_level_values('nmi'))
-#         customers_nmi_with_pv = copy(customers_nmi)
-
-#         # To obtain the data for each nmi: --> data.loc[nmi]
-#         # To obtain the data for timestep t: --> data.loc[pd.IndexSlice[:, datetimes[t]], :]
-
-#         ##### Read 5-minute weather data from SolCast for three locations
-#         data_weather0 = pd.read_csv(input_features['weather_data1_path'])
-#         data_weather0['PeriodStart'] = pd.to_datetime(data_weather0['PeriodStart'])
-#         data_weather0 = data_weather0.drop('PeriodEnd', axis=1)
-#         data_weather0 = data_weather0.rename(columns={"PeriodStart": "datetime"})
-#         data_weather0.set_index('datetime', inplace=True)
-#         data_weather0.index = data_weather0.index.tz_convert('Australia/Sydney')
-#         # data_weather0['isweekend'] = (data_weather0.index.day_of_week > 4).astype(int)
-#         # data_weather0['Temp_EWMA'] = data_weather0.AirTemp.ewm(com=0.5).mean()
-        
-#         # *** Temporary *** 
-#         filt = (data_weather0.index > '2018-01-01 23:59:00')
-#         data_weather0 = data_weather0.loc[filt].copy()
-        
-#         data_weather1 = pd.read_csv(input_features['weather_data2_path'])
-#         data_weather1['PeriodStart'] = pd.to_datetime(data_weather1['PeriodStart'])
-#         data_weather1 = data_weather1.drop('PeriodEnd', axis=1)
-#         data_weather1 = data_weather1.rename(columns={"PeriodStart": "datetime"})
-#         data_weather1.set_index('datetime', inplace=True)
-#         data_weather1.index = data_weather1.index.tz_convert('Australia/Sydney')
-
-
-#         # *** Temporary *** 
-#         filt = (data_weather1.index > '2018-01-01 23:59:00')
-#         data_weather1 = data_weather1.loc[filt].copy()
-
-#         data_weather2 = pd.read_csv(input_features['weather_data3_path'])
-#         data_weather2['PeriodStart'] = pd.to_datetime(data_weather2['PeriodStart'])
-#         data_weather2 = data_weather2.drop('PeriodEnd', axis=1)
-#         data_weather2 = data_weather2.rename(columns={"PeriodStart": "datetime"})
-#         data_weather2.set_index('datetime', inplace=True)
-#         data_weather2.index = data_weather2.index.tz_convert('Australia/Sydney')
-
-
-#         # *** Temporary *** 
-#         filt = (data_weather2.index > '2018-01-01 23:59:00')
-#         data_weather2 = data_weather2.loc[filt].copy()
-
-#         data_weather = {'Loc1': data_weather0,
-#                         'Loc2': data_weather1,
-#                         'Loc3': data_weather2,  }
-
-
-#     global Customers
-
-#     class Customers:
-        
-#         num_of_customers = 0
-
-#         def __init__(self, nmi,input_features):
-
-#             self.nmi = nmi      # store nmi in each object              
-#             self.data = data.loc[self.nmi]      # store data in each object         
-
-#             Customers.num_of_customers += 1
-
-#         def generate_forecaster(self,input_features):
-            
-#             """
-#             generate_forecaster(self,input_features)
-            
-#             This function generates a forecaster object to be used for a recursive multi-step forecasting method. 
-#             It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-#             have different objective can be used with the same parameters.
-            
-#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
-#             """
-
-#             # Create a forecasting object
-#             self.forecaster = ForecasterAutoreg(
-#                     regressor = make_pipeline(StandardScaler(), Ridge()),  
-#                     lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
-#                 )
-
-#             # Train the forecaster using the train data
-#             self.forecaster.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
-
-#         def generate_optimised_forecaster_object(self,input_features):
-            
-#             """
-#             generate_optimised_forecaster_object(self,input_features)
-            
-#             This function generates a forecaster object for each \textit{nmi} to be used for a recursive multi-step forecasting method.
-#             It builds on function Generate\_forecaster\_object by combining grid search strategy with backtesting to identify the combination of lags 
-#             and hyperparameters that achieve the best prediction performance. As default, it is based on a linear least squares with \textit{l2} regularisation method. 
-#             Alternatively, it can use LinearRegression() and Lasso() methods to generate the forecaster object.
-
-#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
-#             """
-
-#             # This line is used to hide the bar in the optimisation process
-#             tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
-
-#             self.forecaster = ForecasterAutoreg(
-#                     regressor = make_pipeline(StandardScaler(), Ridge()),
-#                     lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
-#                 )
-
-#             # Regressor's hyperparameters
-#             param_grid = {'ridge__alpha': np.logspace(-3, 5, 10)}
-#             # Lags used as predictors
-#             lags_grid = [list(range(1,24)), list(range(1,48)), list(range(1,72)), list(range(1,96))]
-
-#             # optimise the forecaster
-#             grid_search_forecaster(
-#                             forecaster  = self.forecaster,
-#                             y           = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
-#                             param_grid  = param_grid,
-#                             # lags_grid   = lags_grid,
-#                             steps       =  input_features['Window size'],
-#                             metric      = 'mean_absolute_error',
-#                             # refit       = False,
-#                             initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * 10,
-#                             # fixed_train_size   = False,
-#                             return_best = True,
-#                             verbose     = False
-#                     )
-            
-
-#         def generate_prediction(self,input_features):
-#             """
-#             generate_prediction(self,input_features)
-            
-#             This function outputs the prediction values using a Recursive multi-step point-forecasting method. 
-            
-#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
-#             """
-            
-#             new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-#             self.predictions = self.forecaster.predict(steps=input_features['Windows to be forecasted'] * input_features['Window size'], last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).to_frame().set_index(new_index)
-
-#         def generate_interval_prediction(self,input_features):
-#             """
-#             generate_interval_prediction(self,input_features)
-            
-#             This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
-#             The confidence level can be set in the function parameters as "interval = [10, 90]".
-        
-#             input_features is a dictionary. To find an example of its format refer to the read_data.py file
-#             """
-
-#             # Create a time-index for the dates that are being predicted
-#             new_index = pd.date_range(start=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=1), end=date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10]))+timedelta(days=input_features['Windows to be forecasted']+1),freq=input_features['data_freq']).delete(-1)
-            
-#             # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-#             self.interval_predictions = self.forecaster.predict_interval(steps=input_features['Windows to be forecasted'] * input_features['Window size'], interval = [10, 90],n_boot = 1000, last_window=self.data[input_features['Forecasted_param']].loc[input_features['Last-observed-window']]).set_index(new_index)
-
-
-#         def generate_disaggregation_using_reactive(self):
-
-#             QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
-#             QP_coeff[(QP_coeff.index[-1] + timedelta(days=1)).strftime("%Y-%m-%d")] = QP_coeff[-1]
-#             QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
-#             QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
-#             QP_coeff = QP_coeff[QP_coeff.index <= self.data.reactive_power.index[-1]]
-
-#             set_diff = list( set(QP_coeff.index)-set(self.data.reactive_power.index) )
-#             QP_coeff = QP_coeff.drop(set_diff)
-
-#             load_est = self.data.reactive_power / QP_coeff 
-#             pv_est = load_est  - self.data.active_power
-#             pv_est[pv_est < 0] = 0
-#             # pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
-#             load_est = pv_est + self.data.active_power
-            
-#             self.data['pv_disagg'] = pv_est
-#             self.data['demand_disagg'] = load_est
-
-#         def Generate_disaggregation_positive_minimum_PV(self):
-#             D = copy(self.data.active_power)
-#             D[D<=0] = 0
-#             S = copy(self.data.active_power)
-#             S[S>=0] = 0
-#             self.data['pv_disagg'] =  - S
-#             self.data['demand_disagg'] = D
-
-#     customers = {customer: Customers(customer,input_features) for customer in customers_nmi}
-
-#     return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather
-
-
-
-# # ================================================================
-# # Older input_features variable format (saved here for backup)
-# # ================================================================
-
-# input_features = {  'file_type': 'Converge',
-#                     'data_path':  '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/_WANNIA_8MB_MURESK-nmi-loads.csv',
-#                     'nmi_type_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/nmi.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2022-07-01',
-#                     'End training': '2022-07-27',
-#                     'Last-observed-window': '2022-07-27',
-#                     'Window size': 48 ,
-#                     'Windows to be forecasted':    3,     
-#                     'data_freq' : '30T',
-#                     'core_usage': 8      
-#                      }
-
-# input_features = {  'file_type': 'NextGen',
-#                     'file_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/NextGen.csv',
-#                     'weather_data1_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L1_Solcast_PT5M.csv',
-#                     'weather_data2_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L2_Solcast_PT5M.csv',
-#                     'weather_data3_path': '/Users/mahdinoori/Documents/WorkFiles/Simulations/LoadForecasting/load_forecasting/data/Canberra_L3_Solcast_PT5M.csv',
-#                     'Forecasted_param': 'active_power',         # set this parameter to the value that is supposed to be forecasted. Acceptable: 'active_power' or 'reactive_power'
-#                     'Start training': '2018-01-01',
-#                     'End training': '2018-02-01',
-#                     'Last-observed-window': '2018-02-01',
-#                     'Window size':  288,
-#                     'Windows to be forecasted':    3,
-#                     'data_freq' : '5T',
-#                     'core_usage': 8      }  
-# data, customers_nmi,customers_nmi_with_pv,datetimes, customers,data_weather = read_data(input_features)
-
-
-# # ================================================================
-# # Export data as a json file previouse approach for interval based load forecast
-# # ================================================================
-
-# # Export interval based method into a json file
-# def export_interval_result_to_json(predictions_output_interval,output_file_name):
-#     """
-#     export_interval_result_to_json(predictions_output_interval)
-
-#     This function saves the predictions generated by function forecast_interval as a json file.
-#     """
-
-#     copy_predictions_output = copy(predictions_output_interval)
-#     for c in copy_predictions_output.keys():
-#         copy_predictions_output[c] = json.loads(copy_predictions_output[c].to_json())
-#     with open(output_file_name,"w") as f:
-#         json.dump(copy_predictions_output,f)
-
-# def read_json_interval(filename):
-
-#     """
-#     read_json_interval(filename)
-
-#     This function imports the json file generated by function export_interval_result_to_json
-#     and return the saved value in pandas.Dataframe format.
-#     """
-#     with open(filename,"r") as f:
-#         loaded_predictions_output = json.load(f)
-
-#     for l in list(loaded_predictions_output.keys()):
-#         loaded_predictions_output[l] = pd.read_json(json.dumps(loaded_predictions_output[l]))
-    
-#     return(loaded_predictions_output)
-
-
-
-
-# # ================================================================
-# # Data URL for the examples
-# # ================================================================
-# MURESK_network_data_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805910'
-# Ausgrid_data = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805915'
-# NextGen_data = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805925'
-
-# nmi_csv_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805930'
-# sydney_wather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805935'
-# canberra_weather_url = 'https://cloudstor.aarnet.edu.au/sender/download.php?token=087e5222-9919-4c67-af86-3e7d284e1ec2&files_ids=17805920'
-
-
-
-
-
-
-# # # ================================================================
-# # # Method (3) Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
-# # # ================================================================
-
-# def pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,target_customer,time_hms,input_features):
-    
-#     start_dd = (datetime.strptime(input_features['Start training'],'%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
-#     dd = pd.date_range(start= start_dd+ f' {time_hms}',end=input_features['End training']+f' {time_hms}',freq='1D',tz='UTC').tz_convert('Australia/Sydney')
-
-#     set_diff = list( set( dd) - set(hist_data_proxy_customers[list(hist_data_proxy_customers.keys())[0]].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].index) )
-#     dd = dd.drop(set_diff)    
-
-#     reg = LinearRegression().fit(
-#                                     np.transpose(np.array(
-#                                         [hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].loc[dd].tolist() for i in hist_data_proxy_customers.keys()]
-#                                                     )       ),
-#                                         np.array(target_customer.data[input_features['Forecasted_param']][input_features['Start training']:input_features['End training']].loc[dd].tolist()
-#                                                 )       
-#                                                     )
-
-
-#     # ## To get the linear regression parameters use the line below
-#     LCoef = reg.coef_
-#     ddd = pd.date_range(start= input_features['End training']+ f' {time_hms}',end=(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")+f' {time_hms}',freq='1D',tz='Australia/Sydney')
-#     To_be_predicted = np.transpose(np.array([hist_data_proxy_customers[i].data[input_features['Forecasted_param']][input_features['End training']:(date(int(input_features['Last-observed-window'][0:4]),int(input_features['Last-observed-window'][5:7]),int(input_features['Last-observed-window'][8:10])) + timedelta(days=input_features['Windows to be forecasted']-1)).strftime("%Y-%m-%d")].loc[ddd].tolist() 
-#                                                 for i in hist_data_proxy_customers.keys()]))
-
-#     pred =  pd.DataFrame(reg.predict(To_be_predicted),columns=['pred'])
-#     pred['datetime']= ddd
-
-#     nmi = [target_customer.nmi] * len(pred)
-#     pred['nmi'] = nmi
-
-#     # # pred.reset_index(inplace=True)
-#     pred.set_index(['nmi', 'datetime'], inplace=True)   
-
-#     return pred
-
-# def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features):
-    
-#     tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=input_features['data_freq'])[0:-1].strftime('%H:%M:%S')
-#     pred = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[0],input_features)
-
-#     for t in range(1,len(tt)):
-#         pred_temp = pred_each_time_step_repo_linear_reg(hist_data_proxy_customers,customer,tt[t],input_features)
-#         pred = pd.concat([pred,pred_temp])
-
-#     pred.sort_index(level = 1,inplace=True)
-
-#     return (pred)

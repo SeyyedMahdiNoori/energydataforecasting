@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from converge_load_forecasting import initialise
+from converge_load_forecasting import initialise,forecast_pointbased_autoregressive_single_node,forecast_inetervalbased_single_node,forecast_pointbased_rectified_single_node,forecast_pointbased_direct_single_node,forecast_pointbased_stacking_single_node,forecast_lin_reg_proxy_measures_single_node,forecast_lin_reg_proxy_measures_separate_time_steps,forecast_pointbased_exog_reposit_single_node
 
 
 # # Donwload if data is availbale in csv format
@@ -17,17 +17,25 @@ customersdatapath = './NextGen_example.csv'
 data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',windows_to_be_forecasted=1)
 
 
-# ################
-# ## Initialise variables 
-# ################
-# # Set this value to choose an nmi from customers_nmi 
-# # Examples
-nmi = customers_nmi_with_pv[10]
+# An arbitrary customer nmi to be use as target customer for forecasting
+nmi = customers_nmi[10]
+customer = customers[nmi]
 
+# n number of customers (here arbitrarily 5 is chosen) to be forecasted parallely
+n_customers = {i: customers[customers_nmi_with_pv[i]] for i in np.random.default_rng(seed=1).choice(len(customers_nmi_with_pv), size=5, replace=False)}
 
+# n number of customers (here arbitrarily 5 is chosen) with know real-time values
+hist_data_proxy_customers = {i: customers[customers_nmi_with_pv[i]] for i in np.random.default_rng(seed=3).choice(len(customers_nmi_with_pv), size=5, replace=False) if i not in n_customers.keys()}
 
-# # Time series plot
-# # ==============================================================================
+# # ============================================================================
+# # ============================================================================
+# #     Data Visualisation
+# # ============================================================================
+# # ============================================================================
+
+# # ===================================
+# #     Time series plot
+# # ===================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
 customers[nmi].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
 plt.xlabel("Date")
@@ -36,9 +44,9 @@ ax.set_title('Behind the meter measurement')
 # plt.savefig('Active_power_data.eps', format='eps')
 plt.show()
 
-
-# Zooming time series chart
-# ==============================================================================
+# # ===================================
+# #     Zooming time series chart
+# # ===================================
 from datetime import timedelta
 zoom = (datetimes[0] + timedelta(days = 1) ,datetimes[0] + timedelta(days = 2) )
 
@@ -62,9 +70,9 @@ plt.subplots_adjust(hspace=1)
 plt.show()
 
 
-
-# Boxplot for weekly seasonality
-# ==============================================================================
+# # ===================================
+# #     Boxplot for weekly seasonality
+# # ===================================
 fig, ax = plt.subplots(figsize=(9, 4))
 customers[nmi].data['week_day'] = customers[nmi].data.index.day_of_week + 1
 customers[nmi].data.boxplot(column='active_power', by='week_day', ax=ax)
@@ -78,8 +86,9 @@ plt.ylabel("Active Power (Watt)")
 # plt.savefig('Seasonality_Week.eps', format='eps')
 plt.show()
 
-# Boxplot for daily seasonality
-# ==============================================================================
+# # ===================================
+# #     Boxplot for daily seasonality
+# # ===================================
 fig, ax = plt.subplots(figsize=(9, 4))
 customers[nmi].data['hour_day'] = customers[nmi].data.index.hour + 1
 customers[nmi].data.boxplot(column='active_power', by='hour_day', ax=ax)
@@ -93,17 +102,18 @@ ax.set_title('Demand distribution by the time of the day')
 # plt.savefig('Seasonality_Day.eps', format='eps')
 plt.show()
 
-
-# Autocorrelation plot
-# ==============================================================================
+# # ===================================
+# #     Autocorrelation plot
+# # ===================================
 fig, ax = plt.subplots(figsize=(7, 3))
-plot_acf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=120)
+plot_acf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=input_features['Window size'])
 plt.show()
 
-# Partial autocorrelation plot
-# ==============================================================================
+# # ===================================
+# #     Partial autocorrelation plot
+# # ===================================
 fig, ax = plt.subplots(figsize=(9, 4.5))
-plot_pacf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=48*2)
+plot_pacf(customers[nmi].data[input_features['Forecasted_param']], ax=ax, lags=input_features['Window size'])
 plt.xlabel("Lages")
 plt.ylabel("PACF")
 # ax.set_title('')
@@ -111,78 +121,144 @@ plt.ylabel("PACF")
 plt.show()
 
 
+# # ==================================================
+# # Recursive autoregressive multi-step point-forecasting method
+# # ==================================================
 
-# Plot Predition vs Real data using point-based approach
-# ==============================================================================
+# generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
+res_autoregressive_single = forecast_pointbased_autoregressive_single_node(customer,input_features)
 
-customers[nmi].generate_forecaster(input_features)
-customers[nmi].generate_prediction(input_features)
-predictions= customers[nmi].predictions
-fig, ax = plt.subplots(figsize=(12, 4.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index].plot(ax=ax, linewidth=2, label='real')
-predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_autoregressive_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_autoregressive_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
 ax.set_title('Prediction vs real demand')
 ax.legend()
 plt.xlabel("Time")
-plt.ylabel("Active Power (Watt)")
+plt.ylabel("Active Power (kW)")
 # plt.savefig('Real_vs_pred.eps', format='eps')
-plt.show()   
+plt.show() 
 
 
-# Plot Predition vs Real data using point-based approach with and without forecaster optimiser
-# ==============================================================================
+# # ==================================================
+# # Recursive multi-step probabilistic forecasting method
+# # ==================================================
 
-customers[nmi].generate_forecaster(input_features)
-customers[nmi].generate_prediction(input_features)
-predictions= customers[nmi].predictions
+# generate forecasting values for a specific nmi using a recursive multi-step probabilistic forecasting method
+res_interval_single = forecast_inetervalbased_single_node(customer,input_features)
 
-customers[nmi].generate_optimised_forecaster_object(input_features)
-customers[nmi].generate_prediction(input_features)
-predictions_optimised= customers[nmi].predictions
-
-fig, ax = plt.subplots(figsize=(12, 3.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index].plot(ax=ax, linewidth=2, label='real')
-predictions.pred.plot(linewidth=2, label='prediction', ax=ax)
-predictions_optimised.pred.plot(linewidth=2, label='prediction-optimised', ax=ax)
-
-y_true = np.array(list(customers[nmi].data[input_features['Forecasted_param']].loc[predictions.index]))
-y_pred = np.array(list(predictions.pred))
-y_pred_optimised = np.array(list(predictions_optimised.pred))
-mses = ((y_true-y_pred)**2).mean()
-mses_optimised = ((y_true-y_pred_optimised)**2).mean()
-print(f"error based (mse): {mses}")
-print(f"error optimised (mse): {mses_optimised}")
-
-ax.set_title('Prediction vs real demand')
-ax.legend()
-plt.show()   
-
-
-# # Plot Interval Predition vs Real data using the Recursive multi-step probabilistic forecasting method
-# # ==============================================================================
 import matplotlib.ticker as ticker
-
-customers[nmi].generate_forecaster(input_features)
-customers[nmi].generate_interval_prediction(input_features)
-predictions_interval= customers[nmi].interval_predictions
-
-fig, ax=plt.subplots(figsize=(11, 4.5))
-customers[nmi].data[input_features['Forecasted_param']].loc[predictions_interval.index].plot(ax=ax, linewidth=2, label='real')
+fig, ax = plt.subplots(figsize=(12, 3.5))
+customer.data[input_features['Forecasted_param']].loc[res_autoregressive_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
 ax.fill_between(
-    predictions_interval.index,
-    predictions_interval['lower_bound'],
-    predictions_interval['upper_bound'],
+    res_interval_single.loc[nmi].index,
+    res_interval_single.loc[nmi]['lower_bound'],
+    res_interval_single.loc[nmi]['upper_bound'],
     color = 'deepskyblue',
     alpha = 0.3,
     label = '80% interval'
 )
-
-ax.yaxis.set_major_formatter(ticker.EngFormatter())
-plt.xlabel("Time")
-plt.ylabel("Active Power (Watt)")
-ax.set_title('Energy demand forecast')
+ax.set_title('Prediction vs real demand')
 ax.legend()
-# plt.savefig('Real_vs_pred_interval.eps', format='eps')
-plt.show()   
-   
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
+
+# # ================================================================
+# # Recitifed recursive multi-step point-forecasting method
+# # ================================================================
+res_rectified_single = forecast_pointbased_rectified_single_node(customer,input_features)
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_rectified_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_rectified_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
+
+# ================================================================
+# Direct recursive multi-step point-forecasting method
+# ================================================================
+res_direct_single = forecast_pointbased_direct_single_node(customer,input_features)
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_direct_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_direct_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
+
+# # ================================================================
+# # Stacking recursive multi-step point-forecasting method
+# # ================================================================
+res_stacking_single = forecast_pointbased_stacking_single_node(customer,input_features)
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_stacking_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_stacking_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
+
+
+
+# # # ================================================================
+# # # Load_forecasting Using linear regression of Reposit data and smart meters
+# # # ================================================================
+res_rep_lin_single_time_single = forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer,input_features)
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_rep_lin_single_time_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_rep_lin_single_time_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
+
+
+###
+# Note: This approach requires more historical data for training and perform very poorly in cases of low data for training.
+# Thus, it has not been depicted here.
+###
+# # # ================================================================
+# # # Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
+# # # ================================================================
+# res_rep_lin_multi_time_single = forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features)    
+
+# fig, ax = plt.subplots(figsize=(12, 3.5))
+# res_rep_lin_multi_time_single.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+# customer.data[input_features['Forecasted_param']].loc[res_rep_lin_multi_time_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+# ax.set_title('Prediction vs real demand')
+# ax.legend()
+# plt.xlabel("Time")
+# plt.ylabel("Active Power (kW)")
+# plt.ylim((-10, 10))
+# # plt.savefig('Real_vs_pred.eps', format='eps')
+# plt.show() 
+
+# # ================================================================
+# # Load_forecasting Using linear regression of Reposit data and smart meter
+# # ================================================================
+res_rep_exog = forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features)
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_rep_exog.loc[nmi].plot(ax=ax,linewidth=2,label='autoregressive')
+customer.data[input_features['Forecasted_param']].loc[res_rep_exog.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
   
