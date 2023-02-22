@@ -7,7 +7,7 @@ with open("README.md" , "r")as fh:
 
 setup(
     name='converge-load-forecasting',
-    version='0.0.3',
+    version='0.0.5',
     author='Seyyed Mahdi Noori Rahim Abadi, Dan Gordon',
     author_email='mahdi.noori@anu.edu.au',
     long_description=long_description,
@@ -15,7 +15,7 @@ setup(
     packages=['converge_load_forecasting'],
     install_requires=[
         'connectorx',
-        'dateutil',
+        # 'dateutil==2.8.2',
         'datetime',
         'matplotlib',
         'more_itertools',
@@ -26,7 +26,7 @@ setup(
         'sklearn',
         'statsmodels',
         'tqdm',
-        'tsprial'
+        # 'tsprial'
     ],
     scripts=[
     ]
