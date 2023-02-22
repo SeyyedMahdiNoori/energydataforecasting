@@ -24,17 +24,17 @@ from converge_load_forecasting import initialise,forecast_pointbased_autoregress
 
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
+data, customers, input_features, customers_nmi, datetimes = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
 nmi = customers_nmi[10]
 customer = customers[nmi]
 
 # n number of customers (here arbitrarily 5 is chosen) to be forecasted parallely
-n_customers = {i: customers[customers_nmi_with_pv[i]] for i in np.random.default_rng(seed=1).choice(len(customers_nmi_with_pv), size=5, replace=False)}
+n_customers = {i: customers[customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(customers_nmi), size=5, replace=False)}
 
 # n number of customers (here arbitrarily 5 is chosen) with know real-time values
-hist_data_proxy_customers = {i: customers[customers_nmi_with_pv[i]] for i in np.random.default_rng(seed=3).choice(len(customers_nmi_with_pv), size=5, replace=False) if i not in n_customers.keys()}
+hist_data_proxy_customers = {i: customers[customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
 
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================

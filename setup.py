@@ -15,6 +15,8 @@ setup(
     packages=['converge_load_forecasting'],
     install_requires=[
         'connectorx',
+        'dateutil',
+        'datetime',
         'matplotlib',
         'more_itertools',
         'multiprocess',
@@ -22,7 +24,9 @@ setup(
         'pyomo',
         'skforecast==0.4.2',
         'sklearn',
-        'statsmodels'
+        'statsmodels',
+        'tqdm',
+        'tsprial'
     ],
     scripts=[
     ]
