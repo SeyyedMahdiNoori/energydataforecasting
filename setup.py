@@ -26,7 +26,7 @@ setup(
         'sklearn',
         'statsmodels',
         'tqdm',
-        # 'tsprial'
+        # 'tsprial==1.0.5'
     ],
     scripts=[
     ]
