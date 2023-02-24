@@ -3,7 +3,10 @@ import pandas as pd
 import numpy as np
 import copy
 import sklearn
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import  DecisionTreeRegressor
 import skforecast 
+from skforecast.ForecasterAutoreg import ForecasterAutoreg
 import datetime
 from concurrent.futures import ProcessPoolExecutor
 import multiprocess as mp
@@ -36,7 +39,7 @@ def has_timezone(string: str) -> bool:
         return parsed_date.tzinfo is not None
     except (TypeError, ValueError):
         return False
-        
+
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
 # # ================================================================
@@ -65,7 +68,7 @@ class Customers:
         """
 
         # Create a forecasting object
-        self.forecaster_autoregressive = skforecast.ForecasterAutoreg.ForecasterAutoreg(
+        self.forecaster_autoregressive = ForecasterAutoreg(
                 regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),  
                 lags      = input_features['Window size']      
             )
@@ -99,7 +102,7 @@ class Customers:
         """
 
         self.forecaster_stacking = tsprial.forecasting.ForecastingStacked(
-                    [sklearn.linear_model.Ridge(), sklearn.tree.DecisionTreeRegressor()],
+                    [sklearn.linear_model.Ridge(), DecisionTreeRegressor()],
                     test_size = input_features['Window size']* input_features['Windows to be forecasted'],
                     lags=range(1,input_features['Window size']+1),
                     use_exog=False
@@ -138,7 +141,7 @@ class Customers:
         # This line is used to hide the bar in the optimisation process
         tqdm.tqdm.__init__ = partialmethod(tqdm.tqdm.__init__, disable=True)
 
-        self.forecaster = skforecast.ForecasterAutoreg.ForecasterAutoreg(
+        self.forecaster = ForecasterAutoreg(
                 regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),
                 lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
             )
@@ -174,17 +177,17 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         if self.check_time_zone_class == True:
             new_index =  pd.date_range(
-                                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                                         freq=input_features['data_freq'],
                                         tz="Australia/Sydney").delete(-1)
         else:
             new_index =  pd.date_range(
-                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                             freq=input_features['data_freq']).delete(-1)
 
-        self.predictions_autoregressive = self.forecaster_autoregressive.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
+        self.predictions_autoregressive = self.forecaster_autoregressive.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
         
     
     def generate_prediction_direct(self,input_features):
@@ -197,14 +200,14 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         if self.check_time_zone_class == True:
             new_index =  pd.date_range(
-                                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                                         freq=input_features['data_freq'],
                                         tz="Australia/Sydney").delete(-1)
         else:
             new_index =  pd.date_range(
-                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                             freq=input_features['data_freq']).delete(-1) 
 
         self.predictions_direct = pd.DataFrame(self.forecaster_direct.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
@@ -219,14 +222,14 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         if self.check_time_zone_class == True:
             new_index =  pd.date_range(
-                                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                                         freq=input_features['data_freq'],
                                         tz="Australia/Sydney").delete(-1)
         else:
             new_index =  pd.date_range(
-                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                             freq=input_features['data_freq']).delete(-1)            
         
         self.predictions_stacking = pd.DataFrame(self.forecaster_stacking.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
@@ -242,14 +245,14 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         if self.check_time_zone_class == True:
             new_index =  pd.date_range(
-                                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                                         freq=input_features['data_freq'],
                                         tz="Australia/Sydney").delete(-1)
         else:
             new_index =  pd.date_range(
-                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                             freq=input_features['data_freq']).delete(-1) 
 
         self.predictions_rectified = pd.DataFrame(self.forecaster_rectified.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
@@ -265,23 +268,23 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         if self.check_time_zone_class == True:
             new_index =  pd.date_range(
-                                        start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                                         freq=input_features['data_freq'],
                                         tz="Australia/Sydney").delete(-1)
         else:
             new_index =  pd.date_range(
-                            start=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
                             freq=input_features['data_freq']).delete(-1)       
 
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
         self.interval_predictions = self.forecaster_autoregressive.predict_interval(steps=len(new_index),
                                                                         interval = [10, 90],
                                                                         n_boot = 1000,
-                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]
+                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]
                                                                         ).set_index(new_index)
-        # self.predictions                   = self.forecaster.predict(steps=len(new_index),                                    last_window=self.data[input_features['Forecasted_param']].loc[(datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
+        # self.predictions                   = self.forecaster.predict(steps=len(new_index),                                    last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
 
     def generate_disaggregation_using_reactive(self,input_features):
@@ -335,7 +338,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, Last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, windows_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
-                db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Tuple[pd.DataFrame,List[Union[int,str]],List[Union[int,str]],List[pd.Timestamp],Dict,Dict,Dict]:
+                db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Tuple[pd.DataFrame, Dict, Dict, List[Union[int,str]], List[pd.Timestamp]]:   #Tuple[pd.DataFrame,List[Union[int,str]],List[Union[int,str]],List[pd.Timestamp],Dict,Dict,Dict]
     '''
     initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weatherdatapath=None,raw_weather_data=None,start_training=None,end_training=None,nmi_type_path=None,Last_observed_window=None,window_size=None,windows_to_be_forecasted=None,core_usage=None,db_url=None,db_table_names=None)
 
@@ -354,8 +357,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         data.sort_values(by='datetime',inplace=True)
     else:
         print('Error!!! Either customersdatapath, raw_data or db_url needs to be provided')
-        return 1,1,1,1,1,1,1 # To match the number of outputs
-    
+        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs (It was: pd.DataFrame(),[1],[1],[pd.Timestamp('2017-01-01')],{},{},{} )
 
     # # ###### Pre-process the data ######
     # format datetime to pandas datetime format
@@ -363,17 +365,17 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         check_time_zone = has_timezone(data.datetime[0])
     except AttributeError:
         print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
-        return 1,1,1,1,1,1,1 # To match the number of outputs
+        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
 
     try:
         if check_time_zone == False:
             data['datetime'] = pd.to_datetime(data['datetime'])
         else:
-            data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True)
-            data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
+            data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+            # data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
     except ParserError:
         print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
-        return 1,1,1,1,1,1,1 # To match the number of outputs
+        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
 
     # # Add weekday column to the data
     # data['DayofWeek'] = data['datetime'].dt.day_name()
@@ -462,12 +464,13 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         pass
     else:
         print('Error!!! The data has either Nan Values or does not have a inter/float type in the column which is going to be forecasted!')
-        return 1,1,1,1,1,1,1 # To match the number of outputs
+        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
 
     # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
     customers = {customer: Customers(customer,data) for customer in customers_nmi}
 
-    return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, input_features
+    return data, customers, input_features, customers_nmi, datetimes
+    # return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, input_features
 
 
 
@@ -829,7 +832,7 @@ def SDD_Same_Irrad_no_PV_houses_single_time_for_parallel(time_step,customers_wit
 
 def SDD_constant_PF_single_node(customer,input_features):
 
-    customer.generate_disaggregation_using_reactive()
+    customer.generate_disaggregation_using_reactive(input_features)
 
     result = pd.DataFrame(customer.data.pv_disagg)
     result['demand_disagg'] = customer.data.demand_disagg
@@ -964,64 +967,66 @@ def SDD_using_temp_single_node(customer,datetimes,weatherdatapath=None,raw_weath
     # read and process weather data if it has been inputted
     if weatherdatapath is None and raw_weather_data is None:
         data_weather = pd.DataFrame()
+        return("Error!!! weather data is not provided")
     elif weatherdatapath is not None:
         data_weather = pd.read_csv(weatherdatapath)
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'], utc=True, infer_datetime_format=True)
-        data_weather['PeriodStart'] = data_weather['PeriodStart'].dt.tz_convert("Australia/Sydney")
-        data_weather = data_weather.drop('PeriodEnd', axis=1)
-        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
-        data_weather.set_index('datetime', inplace=True)
-
-        data_weather['minute'] = data_weather.index.minute
-        data_weather['hour'] = data_weather.index.hour
-        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
-        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
-        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
-        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
-
-        # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
-        # weather data is going to be used for learning
-        set_diff = list( set(data_weather.index)-set( datetimes) )
-        data_weather = data_weather.drop(set_diff)
-        
-        # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
-        set_diff = list( set( datetimes) - set(data_weather.index) )
-        for i in range(0,len(set_diff)):
-            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
-                                    ],ignore_index=False)
-            # data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
-            #                         ],ignore_index=False)
-
     else:
         data_weather = copy.deepcopy(raw_weather_data)
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
-        data_weather = data_weather.drop('PeriodEnd', axis=1)
-        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
-        data_weather.set_index('datetime', inplace=True)
-        data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+        
+    data_weather.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    data_weather = data_weather.drop('PeriodEnd', axis=1)
 
-        data_weather['minute'] = data_weather.index.minute
-        data_weather['hour'] = data_weather.index.hour
-        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
-        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
-        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
-        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(data_weather.datetime[0])
+    except AttributeError:
+        print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+        return pd.DataFrame() # To match the number of outputs
 
-        set_diff = list( set(data_weather.index)-set( datetimes) )
-        data_weather = data_weather.drop(set_diff)
+    try:
+        if check_time_zone == False:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        else:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+    except ParserError:
+        print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
+        return pd.DataFrame() # To match the number of outputs
 
-        set_diff = list( set( datetimes) - set(data_weather.index) )
-        for i in range(0,len(set_diff)):
+    data_weather.set_index('datetime', inplace=True)
+    
+    data_weather['minute'] = data_weather.index.minute
+    data_weather['hour'] = data_weather.index.hour
+    data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+    data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()        
+    
+    # data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+    data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+    if has_timezone(customer.data.index[0]) == False and check_time_zone == True:
+        data_weather.index = [datetime.datetime.strptime(x,"%Y-%m-%d %H:%M:%S") for x in data_weather.index.strftime("%Y-%m-%d %H:%M:%S")]
+
+    # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
+    # weather data is going to be used for learning
+    set_diff = list( set(data_weather.index)-set( datetimes) )
+    data_weather = data_weather.drop(set_diff)
+    
+    # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
+    set_diff = list( set( datetimes) - set(data_weather.index) )
+    for i in range(0,len(set_diff)):
+        try:
             data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                ],ignore_index=False)
+        except Exception:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
                                     ],ignore_index=False)
-
     
     weather_input = data_weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     
-    pv_dis = copy.deepcopy(customer.data.active_power)
+    pv_dis = copy.deepcopy(customer.data.active_power[datetimes])
     pv_dis[pv_dis > 0 ] = 0 
     pv_dis = -pv_dis
-    load_dis = customer.data.active_power + pv_dis
+    load_dis = customer.data.active_power[datetimes] + pv_dis
 
     iteration = 0
     pv_dis_iter = copy.deepcopy(pv_dis*0)
@@ -1031,14 +1036,14 @@ def SDD_using_temp_single_node(customer,datetimes,weatherdatapath=None,raw_weath
         pv_dis_iter = copy.deepcopy(pv_dis)
         print(f'Iteration: {iteration}')
 
-        regr = sklearn.ensemble.RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.active_power[datetimes].index)
         load_dis[load_dis < 0 ] = 0 
-        pv_dis = load_dis - customer.data.active_power
+        pv_dis = load_dis - customer.data.active_power[datetimes]
 
     pv_dis[pv_dis < 0 ] = 0 
-    load_dis =  customer.data.active_power + pv_dis
+    load_dis =  customer.data.active_power[datetimes] + pv_dis
 
     result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
     nmi = [customer.nmi] * len(result)
@@ -1047,16 +1052,16 @@ def SDD_using_temp_single_node(customer,datetimes,weatherdatapath=None,raw_weath
     result.set_index(['nmi', 'datetime'], inplace=True)
     return (result)
 
-def SDD_using_temp_single_node_for_parallel(customer):
+def SDD_using_temp_single_node_for_parallel(customer,datetimes):
 
     print(f'customer_ID: {customer.nmi}')
 
     weather_input = shared_weather_data[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
 
-    pv_dis = copy.deepcopy(customer.data.active_power)
+    pv_dis = copy.deepcopy(customer.data.active_power[datetimes])
     pv_dis[pv_dis > 0 ] = 0 
     pv_dis = -pv_dis
-    load_dis = customer.data.active_power + pv_dis
+    load_dis = customer.data.active_power[datetimes] + pv_dis
 
     iteration = 0
     pv_dis_iter = copy.deepcopy(pv_dis*0)
@@ -1066,14 +1071,14 @@ def SDD_using_temp_single_node_for_parallel(customer):
         iteration += 1
         pv_dis_iter = copy.deepcopy(pv_dis)
 
-        regr = sklearn.ensemble.RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
-        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.index)
+        load_dis = pd.Series(regr.predict(weather_input.values),index=customer.data.active_power[datetimes].index)
         load_dis[load_dis < 0 ] = 0 
-        pv_dis = load_dis - customer.data.active_power
+        pv_dis = load_dis - customer.data.active_power[datetimes]
 
     pv_dis[pv_dis < 0 ] = 0 
-    load_dis =  customer.data.active_power + pv_dis
+    load_dis =  customer.data.active_power[datetimes] + pv_dis
 
     result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
     nmi = [customer.nmi] * len(result)
@@ -1082,21 +1087,79 @@ def SDD_using_temp_single_node_for_parallel(customer):
     result.set_index(['nmi', 'datetime'], inplace=True)
     return (result)
 
-def pool_executor_parallel_temperature(function_name,repeat_iter,input_features,data_weather):
+def pool_executor_parallel_temperature(function_name,repeat_iter,input_features,data_weather,datetimes):
     
+
     global shared_weather_data
 
     shared_weather_data = copy.deepcopy(data_weather)
 
     with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,repeat_iter))  
+        results = list(executor.map(function_name,repeat_iter,itertools.repeat(datetimes)))  
     return results
 
-def SDD_using_temp_multilple_nodes(customers,input_features,data_weather):
+def SDD_using_temp_multilple_nodes(customers,input_features,datetimes,weatherdatapath=None,raw_weather_data=None):
 
+    # read and process weather data if it has been inputted
+    if weatherdatapath is None and raw_weather_data is None:
+        data_weather = pd.DataFrame()
+        return("Error!!! weather data is not provided")
+    elif weatherdatapath is not None:
+        data_weather = pd.read_csv(weatherdatapath)
+    else:
+        data_weather = copy.deepcopy(raw_weather_data)
+        
+    data_weather.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    data_weather = data_weather.drop('PeriodEnd', axis=1)
+
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(data_weather.datetime[0])
+    except AttributeError:
+        print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+        return pd.DataFrame() # To match the number of outputs
+
+    try:
+        if check_time_zone == False:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        else:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+    except ParserError:
+        print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
+        return pd.DataFrame() # To match the number of outputs
+
+    data_weather.set_index('datetime', inplace=True)
+    
+    data_weather['minute'] = data_weather.index.minute
+    data_weather['hour'] = data_weather.index.hour
+    data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+    data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()        
+    
+    # data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+    data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+    if has_timezone(customers[list(customers.keys())[0]].data.index[0]) == False and check_time_zone == True:
+        data_weather.index = [datetime.datetime.strptime(x,"%Y-%m-%d %H:%M:%S") for x in data_weather.index.strftime("%Y-%m-%d %H:%M:%S")]
+
+    # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
+    # weather data is going to be used for learning
+    set_diff = list( set(data_weather.index)-set( datetimes) )
+    data_weather = data_weather.drop(set_diff)
+    
+    # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
+    set_diff = list( set( datetimes) - set(data_weather.index) )
+    for i in range(0,len(set_diff)):
+        try:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                ],ignore_index=False)
+        except Exception:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                    ],ignore_index=False)
+                                    
     global shared_weather_data
 
-    predictions_prallel = pool_executor_parallel_temperature(SDD_using_temp_single_node_for_parallel,customers.values(),input_features,data_weather)
+    predictions_prallel = pool_executor_parallel_temperature(SDD_using_temp_single_node_for_parallel,customers.values(),input_features,data_weather,datetimes)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     if 'shared_weather_data' in globals():
@@ -1132,74 +1195,77 @@ def SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter
     opt = SolverFactory('gurobi')
     opt.solve(model)
     
-    return pd.concat([sum(model.weight[i].value * customers_known_pv[i].data.pv/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites) * customer.data.pv_system_size[0],
-                    -customer.data.active_power]).max(level=0)
+    return pd.concat([sum(model.weight[i].value * customers_known_pv[i].data.pv[datetimes]/customers_known_pv[i].data.pv_system_size[0] for i in model.pv_cites) * customer.data.pv_system_size[0],
+                    -customer.data.active_power[datetimes]]).max(level=0)
 
 def SDD_known_pvs_temp_single_node_algorithm(customer,customers_known_pv,datetimes,weatherdatapath=None,raw_weather_data=None):
     
     # read and process weather data if it has been inputted
     if weatherdatapath is None and raw_weather_data is None:
         data_weather = pd.DataFrame()
+        return("Error!!! weather data is not provided")
     elif weatherdatapath is not None:
         data_weather = pd.read_csv(weatherdatapath)
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'], utc=True, infer_datetime_format=True)
-        data_weather['PeriodStart'] = data_weather['PeriodStart'].dt.tz_convert("Australia/Sydney")
-        data_weather = data_weather.drop('PeriodEnd', axis=1)
-        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
-        data_weather.set_index('datetime', inplace=True)
-
-        data_weather['minute'] = data_weather.index.minute
-        data_weather['hour'] = data_weather.index.hour
-        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
-        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
-        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
-        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
-
-        # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
-        # weather data is going to be used for learning
-        set_diff = list( set(data_weather.index)-set( datetimes) )
-        data_weather = data_weather.drop(set_diff)
-        
-        # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
-        set_diff = list( set( datetimes) - set(data_weather.index) )
-        for i in range(0,len(set_diff)):
-            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
-                                    ],ignore_index=False)
-            # data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
-            #                         ],ignore_index=False)
-
     else:
         data_weather = copy.deepcopy(raw_weather_data)
-        data_weather['PeriodStart'] = pd.to_datetime(data_weather['PeriodStart'])
-        data_weather = data_weather.drop('PeriodEnd', axis=1)
-        data_weather = data_weather.rename(columns={"PeriodStart": "datetime"})
-        data_weather.set_index('datetime', inplace=True)
-        data_weather.index = data_weather.index.tz_convert('Australia/Sydney')
+        
+    data_weather.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    data_weather = data_weather.drop('PeriodEnd', axis=1)
 
-        data_weather['minute'] = data_weather.index.minute
-        data_weather['hour'] = data_weather.index.hour
-        data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
-        data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()
-        data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
-        data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(data_weather.datetime[0])
+    except AttributeError:
+        print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+        return pd.DataFrame() # To match the number of outputs
 
-        set_diff = list( set(data_weather.index)-set( datetimes) )
-        data_weather = data_weather.drop(set_diff)
+    try:
+        if check_time_zone == False:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        else:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+    except ParserError:
+        print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
+        return pd.DataFrame() # To match the number of outputs
 
-        set_diff = list( set( datetimes) - set(data_weather.index) )
-        for i in range(0,len(set_diff)):
+    data_weather.set_index('datetime', inplace=True)
+    
+    data_weather['minute'] = data_weather.index.minute
+    data_weather['hour'] = data_weather.index.hour
+    data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+    data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()        
+    
+    # data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+    data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+    if has_timezone(customer.data.index[0]) == False and check_time_zone == True:
+        data_weather.index = [datetime.datetime.strptime(x,"%Y-%m-%d %H:%M:%S") for x in data_weather.index.strftime("%Y-%m-%d %H:%M:%S")]
+
+    # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
+    # weather data is going to be used for learning
+    set_diff = list( set(data_weather.index)-set( datetimes) )
+    data_weather = data_weather.drop(set_diff)
+    
+    # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
+    set_diff = list( set( datetimes) - set(data_weather.index) )
+    for i in range(0,len(set_diff)):
+        try:
             data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                ],ignore_index=False)
+        except Exception:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
                                     ],ignore_index=False)
 
 
     weather_input = data_weather[['AirTemp','hour','minute','Temp_EWMA','isweekend']]
     
-    pv_iter0 = copy.deepcopy(customer.data.active_power)
+    pv_iter0 = copy.deepcopy(customer.data.active_power[datetimes])
     pv_iter0[pv_iter0 > 0 ] = 0 
     pv_iter0 = -pv_iter0
 
     pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_iter0)
-    load_dis = customer.data.active_power + pv_dis
+    load_dis = customer.data.active_power[datetimes] + pv_dis
     
     iteration = 0
     pv_dis_iter = copy.deepcopy(pv_dis*0)
@@ -1210,13 +1276,13 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,customers_known_pv,datetim
         pv_dis_iter = copy.deepcopy(pv_dis)
         print(f'Iteration: {iteration}')
         
-        regr = sklearn.ensemble.RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
         load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
-        pv_dis = load_dis - customer.data.active_power
+        pv_dis = load_dis - customer.data.active_power[datetimes]
         pv_dis[pv_dis < 0 ] = 0 
         pv_dis = SDD_known_pvs_temp_single_node(customer,customers_known_pv,datetimes,pv_dis)
-        load_dis = customer.data.active_power + pv_dis
+        load_dis = customer.data.active_power[datetimes] + pv_dis
 
     result =  pd.DataFrame(data={'pv_disagg': pv_dis,'demand_disagg': load_dis})
     nmi = [customer.nmi] * len(result)
@@ -1237,7 +1303,7 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
     pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,pv_iter0)
     
     print(f'customer_ID: {customer.nmi} begin')
-    load_dis = customer.data.active_power + pv_dis
+    load_dis = customer.data.active_power[datetimes] + pv_dis
 
 
     iteration = 0
@@ -1249,11 +1315,11 @@ def SDD_known_pvs_temp_single_node_algorithm_for_parallel(customer,datetimes):
         pv_dis_iter = copy.deepcopy(pv_dis)
         # print(iteration)
         
-        regr = sklearn.ensemble.RandomForestRegressor(max_depth=24*12, random_state=0)
+        regr = RandomForestRegressor(max_depth=24*12, random_state=0)
         regr.fit(weather_input.values, load_dis.values)
         load_dis = pd.Series(regr.predict(weather_input.values),index=pv_dis.index)
-        pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,load_dis - customer.data.active_power)
-        load_dis = customer.data.active_power + pv_dis
+        pv_dis = SDD_known_pvs_temp_single_node(customer,shared_data_known_pv,datetimes,load_dis - customer.data.active_power[datetimes])
+        load_dis = customer.data.active_power[datetimes] + pv_dis
 
     print(f'customer_ID: {customer.nmi} done!')
 
@@ -1278,7 +1344,65 @@ def pool_executor_parallel_known_pvs_temp(function_name,repeat_iter,input_featur
     return results
 
 
-def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,data_weather,customers_known_pv,datetimes):
+def SDD_known_pvs_temp_multiple_node_algorithm(customers,input_features,customers_known_pv,datetimes,weatherdatapath=None,raw_weather_data=None):
+
+    # read and process weather data if it has been inputted
+    if weatherdatapath is None and raw_weather_data is None:
+        data_weather = pd.DataFrame()
+        return("Error!!! weather data is not provided")
+    elif weatherdatapath is not None:
+        data_weather = pd.read_csv(weatherdatapath)
+    else:
+        data_weather = copy.deepcopy(raw_weather_data)
+        
+    data_weather.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    data_weather = data_weather.drop('PeriodEnd', axis=1)
+
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(data_weather.datetime[0])
+    except AttributeError:
+        print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+        return pd.DataFrame() # To match the number of outputs
+
+    try:
+        if check_time_zone == False:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'])
+        else:
+            data_weather['datetime'] = pd.to_datetime(data_weather['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+    except ParserError:
+        print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
+        return pd.DataFrame() # To match the number of outputs
+
+    data_weather.set_index('datetime', inplace=True)
+    
+    data_weather['minute'] = data_weather.index.minute
+    data_weather['hour'] = data_weather.index.hour
+    data_weather['isweekend'] = (data_weather.index.day_of_week > 4).astype(int)
+    data_weather['Temp_EWMA'] = data_weather.AirTemp.ewm(com=0.5).mean()        
+    
+    # data_weather.set_index(data_weather.index.tz_localize(None),inplace=True)
+    data_weather = data_weather[~data_weather.index.duplicated(keep='first')]
+
+    if has_timezone(customers[list(customers.keys())[0]].data.index[0]) == False and check_time_zone == True:
+        data_weather.index = [datetime.datetime.strptime(x,"%Y-%m-%d %H:%M:%S") for x in data_weather.index.strftime("%Y-%m-%d %H:%M:%S")]
+
+    # remove rows that have a different index from datetimes (main data index). This keeps them with the same lenght later on when the 
+    # weather data is going to be used for learning
+    set_diff = list( set(data_weather.index)-set( datetimes) )
+    data_weather = data_weather.drop(set_diff)
+    
+    # fill empty rows (rows that are in the main data and not available in the weather data) with average over the same day.
+    set_diff = list( set( datetimes) - set(data_weather.index) )
+    for i in range(0,len(set_diff)):
+        try:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().AirTemp,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':data_weather[set_diff[i].date().strftime('%Y-%m-%d')].mean().Temp_EWMA,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                ],ignore_index=False)
+        except Exception:
+            data_weather = pd.concat([data_weather,pd.DataFrame({'AirTemp':17.5,'hour':set_diff[i].hour,'minute':set_diff[i].minute,'Temp_EWMA':17.5,'isweekend':int((set_diff[i].day_of_week > 4))},index=[set_diff[i]])
+                                    ],ignore_index=False)
+
 
     global shared_data_known_pv
     global shared_weather_data

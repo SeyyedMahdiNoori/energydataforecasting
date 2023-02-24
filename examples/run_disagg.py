@@ -23,7 +23,10 @@ from converge_load_forecasting import (
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
 weatherdatapath = './Canberra_weather_data.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath,core_usage=50)
+data, customers, input_features, customers_nmi, datetimes = initialise(customersdatapath = customersdatapath,core_usage=8)
+
+import copy
+customers_nmi_with_pv = copy.deepcopy(customers_nmi)
 
 # some arbitarary parameters
 # time_steps_for_disagg = copy(datetimes)
@@ -83,13 +86,13 @@ res5.to_csv('dissag_tech5.csv')
 # ################
 # ## Technique 6: Weather Data
 # ################
-res6 = SDD_using_temp_multilple_nodes(n_customers,input_features,data_weather)
+res6 = SDD_using_temp_multilple_nodes(n_customers,input_features,time_steps_for_disagg,weatherdatapath=weatherdatapath)
 print('Disaggregation using Technique 6 is done!')
 res6.to_csv('dissag_tech6.csv')
 
 # # ################
 # # ## Technique 7: Proxy Measurements from Neighbouring Sites and Weather Data
 # # ################
-res7 = SDD_known_pvs_temp_multiple_node_algorithm(n_customers,input_features,data_weather,customers_known_pv,time_steps_for_disagg)
+res7 = SDD_known_pvs_temp_multiple_node_algorithm(n_customers,input_features,customers_known_pv,time_steps_for_disagg,weatherdatapath = weatherdatapath)
 print('Disaggregation using Technique 7 is done!')
 res7.to_csv('dissag_tech7.csv')
