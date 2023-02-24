@@ -21,8 +21,10 @@ from converge_load_forecasting import SDD_min_solar_single_node,SDD_Same_Irrad_m
 # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
 weatherdatapath = './Canberra_weather_data.csv'
-data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
+data, customers, input_features, customers_nmi, datetimes  = initialise(customersdatapath = customersdatapath,weatherdatapath = weatherdatapath)
 
+import copy
+customers_nmi_with_pv = copy.deepcopy(customers_nmi)
 
 # ################
 # ## Initialise variables 
@@ -34,6 +36,7 @@ nmi = customers_nmi_with_pv[10]
 # Dates for disaggregation
 Dates_for_plot_start = '2018-12-23'
 Dates_for_plot_end = '2018-12-24'
+time_steps_for_disagg = customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index
 
 # Required variables for some of the techniques
 customers_without_pv  = [customers_nmi_with_pv[i] for i in np.random.default_rng().choice(len(customers_nmi_with_pv), size=30, replace=False) if i != nmi]  # randomly select 10 nmi as nmi's without pv
@@ -69,7 +72,7 @@ plt.show()
 # ## technique 2
 # ################
 
-pv2 = SDD_Same_Irrad_multiple_times(data,input_features,customers[nmi].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_nmi_with_pv)
+pv2 = SDD_Same_Irrad_multiple_times(data,input_features,time_steps_for_disagg,customers_nmi_with_pv)
 
 # Time series plot
 # ==============================================================================
@@ -88,7 +91,7 @@ plt.show()
 # ## technique 3
 # ################
 
-pv3  = SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,customers[customers_nmi[0]].data[Dates_for_plot_start:Dates_for_plot_end].index,customers_with_pv,customers_without_pv)
+pv3  = SDD_Same_Irrad_no_PV_houses_multiple_times(data,input_features,time_steps_for_disagg,customers_with_pv,customers_without_pv)
 
 # Time series plot
 # ==============================================================================
@@ -127,7 +130,7 @@ plt.show()
 # ## technique 5
 # ################
 
-pv5 = SDD_known_pvs_single_node(customers[nmi],customers_known_pv,datetimes)
+pv5 = SDD_known_pvs_single_node(customers[nmi],customers_known_pv,time_steps_for_disagg)
 
 # Time series plot
 # ==============================================================================
@@ -146,7 +149,7 @@ plt.show()
 # ## technique 6
 # ################
 
-pv6 = SDD_using_temp_single_node(customers[nmi],data_weather)
+pv6 = SDD_using_temp_single_node(customers[nmi],time_steps_for_disagg,weatherdatapath=weatherdatapath)
 
 # Time series plot
 # ==============================================================================
@@ -163,8 +166,7 @@ plt.show()
 # ################
 # ## technique 7
 # ################
-
-pv7 = SDD_known_pvs_temp_single_node_algorithm(customers[nmi],data_weather,customers_known_pv,datetimes)
+pv7 = SDD_known_pvs_temp_single_node_algorithm(customers[nmi],customers_known_pv,time_steps_for_disagg,weatherdatapath=weatherdatapath)
 
 
 # Time series plot
