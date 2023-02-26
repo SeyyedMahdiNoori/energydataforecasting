@@ -15,7 +15,7 @@ setup(
     packages=['converge_load_forecasting'],
     install_requires=[
         'connectorx',
-        # 'dateutil==2.8.2',
+        'python-dateutil',
         'datetime',
         'matplotlib',
         'more_itertools',
@@ -26,7 +26,7 @@ setup(
         'sklearn',
         'statsmodels',
         'tqdm',
-        # 'tsprial==1.0.5'
+        'tspiral'
     ],
     scripts=[
     ]
