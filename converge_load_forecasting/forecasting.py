@@ -18,7 +18,6 @@ import tsprial
 import dateutil
 from dateutil.parser import parse
 from dateutil.parser import ParserError
-
 from typing import Union, Dict, Tuple, List
 
 # Warnings configuration
@@ -345,7 +344,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
     # Read data
     if customersdatapath is not None:
-        data = pd.read_csv(customersdatapath)     
+        data: pd.DataFrame = pd.read_csv(customersdatapath)     
     elif raw_data is not None:
         data = copy.deepcopy(raw_data)
     elif db_url is not None and db_table_names is not None:
@@ -384,12 +383,12 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
     data.set_index(['nmi', 'datetime'], inplace=True)
 
     # save unique dates of the data
-    datetimes = data.index.unique('datetime')
+    datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime'))
 
     # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
     # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
     # defeault values will be used to fill in the gap. 
-    input_features = {}
+    input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
 
     # The parameters to be forecasted. It should be a column name in the input data.
     if forecasted_param is None:
