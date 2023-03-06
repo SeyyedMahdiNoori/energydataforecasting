@@ -1063,7 +1063,7 @@ def forecast_pointbased_exog_time_single_node(customer: Customers, input_feature
 # # This function works on a data with two types, i.e., reposit and smart meters together
 # # ================================================================
 
-def forecasting_mixed_customer_types(customers: Dict[Union[int,str],Customers], 
+def forecasting_mixed_type_customers(customers: Dict[Union[int,str],Customers], 
                                      participants: List[Union[int,str]], 
                                      input_features: Dict,
                                      end_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None, 
