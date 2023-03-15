@@ -431,9 +431,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
     if Last_observed_window is None:
         input_features['Last-observed-window'] = input_features['End training']
     elif len(Last_observed_window) == 10:
-        input_features['Start training'] = Last_observed_window + ' ' + '00:00:00'
+        input_features['Last-observed-window'] = Last_observed_window + ' ' + '00:00:00'
     elif len(Last_observed_window) == 19:
-        input_features['Start training'] = Last_observed_window
+        input_features['Last-observed-window'] = Last_observed_window
     else:
         print('Error!!! last observed window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
         return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
@@ -581,6 +581,7 @@ def forecast_pointbased_rectified_single_node(customer: Customers, input_feature
     customer.generate_prediction_rectified(input_features)
 
     result = customer.predictions_rectified
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)
@@ -630,6 +631,7 @@ def forecast_pointbased_direct_single_node(customer: Customers, input_features: 
     customer.generate_prediction_direct(input_features)
 
     result = customer.predictions_direct
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)
@@ -678,6 +680,7 @@ def forecast_pointbased_stacking_single_node(customer: Customers, input_features
     customer.generate_prediction_stacking(input_features)
 
     result = customer.predictions_stacking
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)
@@ -727,6 +730,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     customer.generate_interval_prediction(input_features)
     
     result = customer.interval_predictions
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)
@@ -783,7 +787,7 @@ def forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers: Dict[
 
     proxy_meas_repo_ = np.transpose(np.array(proxy_meas_repo))
 
-    pred =  pd.DataFrame(reg.predict(proxy_meas_repo_),columns=['pred'])
+    pred =  pd.DataFrame(reg.predict(proxy_meas_repo_),columns=[input_features['Forecasted_param']])
     pred['datetime']= proxy_meas_repo[0].index
     
     nmi = [customer.nmi] * len(pred)
@@ -839,7 +843,7 @@ def pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers: D
     proxy_set_repo_ = np.transpose(np.array(proxy_set_repo))
 
 
-    pred =  pd.DataFrame(reg.predict(proxy_set_repo_),columns=['pred'])
+    pred =  pd.DataFrame(reg.predict(proxy_set_repo_),columns=[input_features['Forecasted_param']])
     pred['datetime']= proxy_set_repo[0].index
 
     nmi = [customer.nmi] * len(pred)
@@ -954,6 +958,7 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     
 
     result = customer.predictions_exog_rep
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
     result.reset_index(inplace=True)

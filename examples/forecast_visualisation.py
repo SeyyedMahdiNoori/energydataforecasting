@@ -14,7 +14,7 @@ from converge_load_forecasting import initialise,forecast_pointbased_autoregress
 
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
-ata, customers, input_features, customers_nmi, datetimes = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
+data, customers, input_features, customers_nmi, datetimes = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
 nmi = customers_nmi[10]
