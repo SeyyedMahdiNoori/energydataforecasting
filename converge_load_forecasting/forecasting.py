@@ -99,6 +99,31 @@ class Customers:
         # Train the forecaster using the train data
         self.forecaster_autoregressive_xgboost.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
+    def generate_forecaster_autoregressive_xgboost_time_exog(self, input_features):            
+        """
+        generate_forecaster_autoregressive(input_features)
+        
+        This function generates a forecaster object to be used for a autoregressive recursive multi-step forecasting method. 
+        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
+        have different objective can be used with the same parameters.
+        """
+
+        # Create a forecasting object
+        self.forecaster_autoregressive_xgboost_time_exog = ForecasterAutoreg(
+                regressor = xgboost.XGBRegressor(),  
+                lags      = input_features['Window size']      
+            )
+
+        exog_time = pd.DataFrame({'datetime': self.data.loc[input_features['Start training']:input_features['End training']].index})
+        exog_time = exog_time.set_index(self.data.loc[input_features['Start training']:input_features['End training']].index)
+        exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+        exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+        exog_time.drop('datetime', axis=1, inplace=True)
+
+        # Train the forecaster using the train data
+        self.forecaster_autoregressive_xgboost_time_exog.fit(y = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+                                                   exog = exog_time.loc[input_features['Start training']:input_features['End training']])
+
     def generate_forecaster_direct(self,input_features):            
         """
         generate_forecaster_direct(self,input_features)
@@ -234,6 +259,36 @@ class Customers:
                             freq=input_features['data_freq']).delete(-1)
 
         self.predictions_autoregressive_xgboost = self.forecaster_autoregressive_xgboost.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
+
+    def generate_prediction_autoregressive_xgboost_time_exog(self,input_features):
+        """
+        generate_prediction_autoregressive_xgboost(self,input_features)
+        
+        This function outputs the prediction values using a Recursive autoregressive multi-step point-forecasting method.          
+        """
+        
+        # generate datetime index for the predicted values based on the window size and the last obeserved window.
+        if self.check_time_zone_class == True:
+            new_index =  pd.date_range(
+                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                                        freq=input_features['data_freq'],
+                                        tz="Australia/Sydney").delete(-1)
+        else:
+            new_index =  pd.date_range(
+                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
+                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
+                            freq=input_features['data_freq']).delete(-1)
+
+        exog_time = pd.DataFrame({'datetime': new_index})
+        # exog_time = exog_time.set_index(new_index)
+        exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+        exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+        exog_time.drop('datetime', axis=1, inplace=True)
+
+        self.predictions_autoregressive_xgboost_time_exog = self.forecaster_autoregressive_xgboost_time_exog.predict(steps=len(new_index),
+                                                                                                                    last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                                                                                    exog = exog_time).to_frame().set_index(new_index)
 
     def generate_prediction_direct(self,input_features):
         """
@@ -522,7 +577,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
     except Exception:
         pass
 
-    if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype == float or int):
+    if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
         print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
 
     # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
@@ -630,7 +685,6 @@ def forecast_pointbased_autoregressive_xgboost_single_node(customer: Customers, 
 
     return result
 
-
 def forecast_pointbased_autoregressive_xgboost_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
@@ -645,6 +699,53 @@ def forecast_pointbased_autoregressive_xgboost_multiple_nodes(customers: Dict[Un
 
     return predictions_prallel
 
+
+# # ================================================================
+# # Autoregressive recursive multi-step point-forecasting method using XGBoost as regressor and time as exogounos
+# # ================================================================
+
+# This function outputs the forecasting for each nmi
+def forecast_pointbased_autoregressive_xgboost_time_exog_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_single_node(customers_nmi,input_features)
+
+    This function generates forecasting values for each customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    
+    # print(customer's nmi)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    # Train a forecasting object
+    customer.generate_forecaster_autoregressive_xgboost_time_exog(input_features)
+    
+    # Generate predictions 
+    customer.generate_prediction_autoregressive_xgboost_time_exog(input_features)
+
+    result = customer.predictions_autoregressive_xgboost_time_exog
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
+def forecast_pointbased_autoregressive_xgboost_multiple_nodes_time_exog(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_autoregressive_xgboost_time_exog_single_node,customers.values(),input_features)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
 
 
 # # ================================================================
@@ -1209,9 +1310,6 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     return participants_pred, non_participants_pred
 
 
-
-
-
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and time as a exogenous variables
 # # ================================================================
@@ -1278,3 +1376,18 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
     result.set_index(['nmi', 'datetime'], inplace=True)
 
     return result
+
+def forecast_pointbased_exog_reposit_time_xgboost_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+
+    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_time_xgboost_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
