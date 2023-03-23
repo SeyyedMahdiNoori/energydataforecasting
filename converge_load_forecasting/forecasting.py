@@ -31,7 +31,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # A function to decide whether a string in the form of datetime has a time zone or not
-def has_timezone(string: str) -> bool:
+def has_timezone(string: Union[str,pd.Timestamp]) -> bool:
     '''
     has_timezone(string) accept string in the form of datetime and return True if it has timezone, and it returns False otherwise.
     '''
@@ -46,7 +46,11 @@ def has_timezone(string: str) -> bool:
     except (TypeError, ValueError):
         return False
 
-def encoding_cyclical_time_features(time_series_data_index):
+def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) -> pd.DataFrame:
+    '''
+    encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) -> pd.DataFrame
+    This function accepts a pd.DatetimeIndex varibale and returns a pd.DataFrame with two columns. The output can be used to encode cyclical time features trigonometric functions.
+    '''
 
     exog_time = pd.DataFrame({'datetime': time_series_data_index})
     exog_time = exog_time.set_index(time_series_data_index)
@@ -56,7 +60,11 @@ def encoding_cyclical_time_features(time_series_data_index):
 
     return exog_time
 
-def generate_index_for_predicted_values(data_tzinfo,input_features,deltatime):
+def generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict, deltatime: datetime.timedelta) -> pd.DatetimeIndex:
+    '''
+    generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict, deltatime: datetime.timedelta) -> pd.DatetimeIndex
+    This function generate index values for the forecasting functions based on the values in the input_feature, partcularly how many windows should be forecasted and the last observed window.
+    '''
 
     if data_tzinfo == True:
         return pd.date_range(
@@ -108,11 +116,11 @@ class Customers:
 
     def generate_forecaster_autoregressive_xgboost(self, input_features):            
         """
-        generate_forecaster_autoregressive(input_features)
+        generate_forecaster_autoregressive_xgboost(input_features)
         
-        This function generates a forecaster object to be used for a autoregressive recursive multi-step forecasting method. 
-        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-        have different objective can be used with the same parameters.
+        This function generates a forecaster object to be used for a autoregressive multi-step forecasting that used xgboost as regressor. 
+        The xgboost is based on the Extreme Gradient Boosting method (https://towardsdatascience.com/xgboost-extreme-gradient-boosting-how-to-improve-on-regular-gradient-boosting-5c6acf66c70a).
+        The function adds the forecaster to the customer instance.
         """
 
         # Create a forecasting object
@@ -126,11 +134,12 @@ class Customers:
 
     def generate_forecaster_autoregressive_xgboost_time_exog(self, input_features):            
         """
-        generate_forecaster_autoregressive(input_features)
+        generate_forecaster_autoregressive_xgboost_time_exog(input_features)
         
-        This function generates a forecaster object to be used for a autoregressive recursive multi-step forecasting method. 
-        It is based on a linear least squares with l2 regularization method. Alternatively, LinearRegression() and Lasso() that
-        have different objective can be used with the same parameters.
+        This function generates a forecaster object to be used for a autoregressive multi-step forecasting that used xgboost as regressor. 
+        The xgboost is based on the Extreme Gradient Boosting method (https://towardsdatascience.com/xgboost-extreme-gradient-boosting-how-to-improve-on-regular-gradient-boosting-5c6acf66c70a).
+        This function add to the generate_forecaster_autoregressive_xgboost() function by considering time as an exogous varibale.
+        The function adds the forecaster to the customer instance.
         """
 
         # Create a forecasting object
@@ -393,9 +402,13 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, Last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, windows_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
-                db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Tuple[pd.DataFrame, Dict, Dict, List[Union[int,str]], List[pd.Timestamp]]:   #Tuple[pd.DataFrame,List[Union[int,str]],List[Union[int,str]],List[pd.Timestamp],Dict,Dict,Dict]
+                db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Union[Initialise_output,None]: 
     '''
-    initialise(customersdatapath=None,raw_data=None,forecasted_param=None,weatherdatapath=None,raw_weather_data=None,start_training=None,end_training=None,nmi_type_path=None,Last_observed_window=None,window_size=None,windows_to_be_forecasted=None,core_usage=None,db_url=None,db_table_names=None)
+    initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
+                weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
+                start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, Last_observed_window: Union[str, None] = None,
+                window_size: Union[int, None] = None, windows_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
+                db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Union[Initialise_output,None]: 
 
     This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires one of the followings: 
     1. a path to a csv file 2. raw_data or 3. database url and the associate table names in that url. Other inputs are all optional.  
