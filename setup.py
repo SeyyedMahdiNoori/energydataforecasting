@@ -26,7 +26,8 @@ setup(
         'sklearn',
         'statsmodels',
         'tqdm',
-        'tspiral'
+        'tspiral',
+        'xgboost'
     ],
     scripts=[
     ]

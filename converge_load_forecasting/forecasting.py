@@ -23,6 +23,7 @@ from typing import Union, Dict, Tuple, List
 import statsmodels.api as sm
 from statsmodels.tools.sm_exceptions import InfeasibleTestError
 import xgboost
+import sys
 
 # Warnings configuration
 # ==============================================================================
@@ -44,6 +45,30 @@ def has_timezone(string: str) -> bool:
             return False
     except (TypeError, ValueError):
         return False
+
+def encoding_cyclical_time_features(time_series_data_index):
+
+    exog_time = pd.DataFrame({'datetime': time_series_data_index})
+    exog_time = exog_time.set_index(time_series_data_index)
+    exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+    exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+    exog_time.drop('datetime', axis=1, inplace=True)
+
+    return exog_time
+
+def generate_index_for_predicted_values(data_tzinfo,input_features,deltatime):
+
+    if data_tzinfo == True:
+        return pd.date_range(
+            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
+            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
+            freq=input_features['data_freq'],
+            tz="Australia/Sydney").delete(-1)
+    else:
+        return pd.date_range(
+            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
+            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
+            freq=input_features['data_freq']).delete(-1)
 
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
@@ -114,11 +139,7 @@ class Customers:
                 lags      = input_features['Window size']      
             )
 
-        exog_time = pd.DataFrame({'datetime': self.data.loc[input_features['Start training']:input_features['End training']].index})
-        exog_time = exog_time.set_index(self.data.loc[input_features['Start training']:input_features['End training']].index)
-        exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-        exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-        exog_time.drop('datetime', axis=1, inplace=True)
+        exog_time = encoding_cyclical_time_features(self.data.loc[input_features['Start training']:input_features['End training']].index)
 
         # Train the forecaster using the train data
         self.forecaster_autoregressive_xgboost_time_exog.fit(y = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
@@ -221,19 +242,9 @@ class Customers:
         
         This function outputs the prediction values using a Recursive autoregressive multi-step point-forecasting method.          
         """
-        
+
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1)
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
         self.predictions_autoregressive = self.forecaster_autoregressive.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
         
@@ -246,17 +257,7 @@ class Customers:
         """
         
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1)
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
         self.predictions_autoregressive_xgboost = self.forecaster_autoregressive_xgboost.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
 
@@ -268,27 +269,14 @@ class Customers:
         """
         
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1)
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
-        exog_time = pd.DataFrame({'datetime': new_index})
-        # exog_time = exog_time.set_index(new_index)
-        exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-        exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-        exog_time.drop('datetime', axis=1, inplace=True)
+        exog_time = encoding_cyclical_time_features(new_index)
 
         self.predictions_autoregressive_xgboost_time_exog = self.forecaster_autoregressive_xgboost_time_exog.predict(steps=len(new_index),
                                                                                                                     last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                                                                                    exog = exog_time).to_frame().set_index(new_index)
+                                                                                                                    exog = (exog_time.reset_index()).drop('index', axis=1)
+                                                                                                                    ).to_frame().set_index(new_index)
 
     def generate_prediction_direct(self,input_features):
         """
@@ -298,17 +286,7 @@ class Customers:
         """
         
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1) 
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
         self.predictions_direct = pd.DataFrame(self.forecaster_direct.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
@@ -320,17 +298,7 @@ class Customers:
         """
         
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1)            
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])          
         
         self.predictions_stacking = pd.DataFrame(self.forecaster_stacking.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
@@ -343,17 +311,7 @@ class Customers:
         """
         
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1) 
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
         self.predictions_rectified = pd.DataFrame(self.forecaster_rectified.predict(np.arange(len(new_index))),index=new_index,columns=['pred'])
 
@@ -366,17 +324,7 @@ class Customers:
         """
 
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        if self.check_time_zone_class == True:
-            new_index =  pd.date_range(
-                                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                                        freq=input_features['data_freq'],
-                                        tz="Australia/Sydney").delete(-1)
-        else:
-            new_index =  pd.date_range(
-                            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]),
-                            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (self.data.index[1]-self.data.index[0]) + datetime.timedelta(days=input_features['Windows to be forecasted']),
-                            freq=input_features['data_freq']).delete(-1)       
+        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])      
 
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
         self.interval_predictions = self.forecaster_autoregressive.predict_interval(steps=len(new_index),
@@ -429,6 +377,13 @@ class Customers:
         self.data['pv_disagg'] =  - S
         self.data['demand_disagg'] = D
 
+class Initialise_output:
+            def __init__(self,data, customers, input_features, customers_nmi, datetimes) -> None:
+                self.data = data
+                self.customers = customers
+                self.input_features = input_features
+                self.customers_nmi = customers_nmi
+                self.datetimes = datetimes
 
 # # ================================================================
 # # Initialise the user preferences and pre-porcess the input data
@@ -445,146 +400,193 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
     This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires one of the followings: 
     1. a path to a csv file 2. raw_data or 3. database url and the associate table names in that url. Other inputs are all optional.  
     '''
-
-    # Read data
-    if customersdatapath is not None:
-        data: pd.DataFrame = pd.read_csv(customersdatapath)     
-    elif raw_data is not None:
-        data = copy.deepcopy(raw_data)
-    elif db_url is not None and db_table_names is not None:
-        sql = [f"SELECT * from {table}" for table in db_table_names]
-        data = cx.read_sql(db_url,sql)
-        data.sort_values(by='datetime',inplace=True)
-    else:
-        print('Error!!! Either customersdatapath, raw_data or db_url needs to be provided')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs (It was: pd.DataFrame(),[1],[1],[pd.Timestamp('2017-01-01')],{},{},{} )
-
-    # # ###### Pre-process the data ######
-    # format datetime to pandas datetime format
     try:
-        check_time_zone = has_timezone(data.datetime[0])
-    except AttributeError:
-        print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
-
-    try:
-        if check_time_zone == False:
-            data['datetime'] = pd.to_datetime(data['datetime'])
+        # Read data
+        if customersdatapath is not None:
+            data: pd.DataFrame = pd.read_csv(customersdatapath)     
+        elif raw_data is not None:
+            data = copy.deepcopy(raw_data)
+        elif db_url is not None and db_table_names is not None:
+            sql = [f"SELECT * from {table}" for table in db_table_names]
+            data = cx.read_sql(db_url,sql)
+            data.sort_values(by='datetime',inplace=True)
         else:
-            data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
-            # data["datetime"] = data["datetime"].dt.tz_convert("Australia/Sydney")
-    except ParserError:
-        print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
+            print('Error!!! Either customersdatapath, raw_data or db_url needs to be provided')
+            sys.exit(1)
+            
+        # # ###### Pre-process the data ######
+        # format datetime to pandas datetime format
+        try:
+            check_time_zone = has_timezone(data.datetime[0])
+        except AttributeError:
+            print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+            sys.exit(1)
 
-    # # Add weekday column to the data
-    # data['DayofWeek'] = data['datetime'].dt.day_name()
+        try:
+            if check_time_zone == False:
+                data['datetime'] = pd.to_datetime(data['datetime'])
+            else:
+                data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+        except ParserError:
+            print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
+            sys.exit(1)
 
-    # Save customer nmis in a list
-    customers_nmi = list(dict.fromkeys(list(data['nmi'].values)))
+        # # Add weekday column to the data
+        # data['DayofWeek'] = data['datetime'].dt.day_name()
 
-    # Make datetime index of the dataset
-    data.set_index(['nmi', 'datetime'], inplace=True)
+        # Save customer nmis in a list
+        customers_nmi = list(dict.fromkeys(list(data['nmi'].values)))
 
-    # save unique dates of the data
-    datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime'))
+        # Make datetime index of the dataset
+        data.set_index(['nmi', 'datetime'], inplace=True)
 
-    # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
-    # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
-    # defeault values will be used to fill in the gap. 
-    input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
+        # save unique dates of the data
+        datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime'))
 
-    # The parameters to be forecasted. It should be a column name in the input data.
-    if forecasted_param is None:
-        input_features['Forecasted_param'] = 'active_power'
-    else:
-        input_features['Forecasted_param'] = forecasted_param
+        # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
+        # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
+        # defeault values will be used to fill in the gap. 
+        input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
 
-    # The datetime index that training starts from
-    if start_training is None:
-        input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d %H:%M:%S")
-    elif len(start_training) == 10:
-        input_features['Start training'] = start_training + ' ' + '00:00:00'
-    elif len(start_training) == 19:
-        input_features['Start training'] = start_training
-    else:
-        print('Error!!! start training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
+        # The parameters to be forecasted. It should be a column name in the input data.
+        if forecasted_param is None:
+            input_features['Forecasted_param'] = 'active_power'
+        elif forecasted_param in data.columns:
+            input_features['Forecasted_param'] = forecasted_param
+        else:
+            print('forecasted_param is not in the data')
+            sys.exit(1)
 
-    # The last datetime index used for trainning.
-    if end_training is None:
-        # input_features['End training'] = (datetimes[-1] - datetime.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-        input_features['End training'] = (datetimes[-1]).strftime("%Y-%m-%d %H:%M:%S")
-    elif len(end_training) == 10:
-        input_features['End training'] = end_training + ' ' + '00:00:00'
-    elif len(end_training) == 19:
-        input_features['End training'] = end_training
-    else:
-        print('Error!!! end training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
+        # The datetime index that training starts from
+        if start_training is None:
+            input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d %H:%M:%S")
+        elif len(start_training) == 10:
+            try:
+                datetime.datetime.strptime(start_training,'%Y-%m-%d')
+                input_features['Start training'] = start_training + ' ' + '00:00:00'
+            except ValueError:
+                print(f"Error!!!{start_training} is NOT a valid date string.")
+                sys.exit(1)
+        elif len(start_training) == 19:
+            try:
+                datetime.datetime.strptime(start_training,'%Y-%m-%d %H:%M:%S')
+                input_features['Start training'] = start_training
+            except ValueError:
+                print(f"Error!!!{start_training} is NOT a valid date string.")
+                sys.exit(1)
+        else:
+            print('Error!!! start_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+            sys.exit(1)
 
-    # The last obersved window. The forecasting values are generated after this time index.
-    if Last_observed_window is None:
-        input_features['Last-observed-window'] = input_features['End training']
-    elif len(Last_observed_window) == 10:
-        input_features['Last-observed-window'] = Last_observed_window + ' ' + '00:00:00'
-    elif len(Last_observed_window) == 19:
-        input_features['Last-observed-window'] = Last_observed_window
-    else:
-        print('Error!!! last observed window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-        return pd.DataFrame(), {}, {}, [1], [pd.Timestamp('2017-01-01')] # To match the number of outputs
+        # The last datetime index used for trainning.
+        if end_training is None:
+            input_features['End training'] = (datetimes[-1]).strftime("%Y-%m-%d %H:%M:%S")
+        elif len(end_training) == 10:
+            try:
+                datetime.datetime.strptime(end_training,'%Y-%m-%d')
+                input_features['End training'] = end_training + ' ' + '00:00:00'
+            except ValueError:
+                print(f"Error! {end_training} is NOT a valid date string.")
+                sys.exit(1)
+        elif len(end_training) == 19:
+            try:
+                datetime.datetime.strptime(end_training,'%Y-%m-%d %H:%M:%S')
+                input_features['End training'] = end_training
+            except ValueError:
+                print(f"Error! {end_training} is NOT a valid date string.")
+                sys.exit(1)
+        else:
+            print('Error!!! end_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+            sys.exit(1)
 
+        # The last obersved window. The forecasting values are generated after this time index.
+        if Last_observed_window is None:
+            input_features['Last-observed-window'] = input_features['End training']
+        elif len(Last_observed_window) == 10:
+            try:
+                datetime.datetime.strptime(Last_observed_window,'%Y-%m-%d')
+                input_features['Last-observed-window'] = Last_observed_window + ' ' + '00:00:00'
+            except ValueError:
+                print(f"Error! {Last_observed_window} is NOT a valid date string.")
+                sys.exit(1)
+        elif len(Last_observed_window) == 19:
+            try:
+                datetime.datetime.strptime(Last_observed_window,'%Y-%m-%d %H:%M:%S')
+                input_features['Last-observed-window'] = Last_observed_window
+            except ValueError:
+                print(f"Error! {Last_observed_window} is NOT a valid date string.")
+                sys.exit(1)
+        else:
+            print('Error!!! Last_observed_window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+            sys.exit(1)
 
-    # Select customers with pv. This is used to read the "nmi.csv" file, used in the Converge project.
-    if nmi_type_path is None:
-        customers_nmi_with_pv = copy.deepcopy(customers_nmi)
-    else:
-        input_features['nmi_type_path'] = nmi_type_path
-        data_nmi = pd.read_csv(nmi_type_path)
-        data_nmi.set_index(data_nmi['nmi'],inplace=True)
+        # Select customers with pv. This is used to read the "nmi.csv" file, used in the Converge project.
+        if nmi_type_path is None:
+            customers_nmi_with_pv = copy.deepcopy(customers_nmi)
+        else:
+            input_features['nmi_type_path'] = nmi_type_path
+            data_nmi = pd.read_csv(nmi_type_path)
+            data_nmi.set_index(data_nmi['nmi'],inplace=True)
 
-        customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
-        data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
-        data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
-        data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
+            customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
+            data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
+            data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
+            data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
 
-    # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
-    # For example, for a data with resolution 30th minutely, the window size woul be 48.
-    if window_size is None:
-        input_features['Window size'] = int(datetime.timedelta(days = 1) / (datetimes[1] - datetimes[0]))
-    else:
-        input_features['Window size'] = window_size
+        # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
+        # For example, for a data with resolution 30th minutely, the window size woul be 48.
+        if window_size is None:
+            input_features['Window size'] = int(datetime.timedelta(days = 1) / (datetimes[1] - datetimes[0]))
+        elif type(window_size)==int:
+            input_features['Window size'] = window_size
+        else:
+            print('window size should be an integer')
+            sys.exit(1)
 
-    # The number of days to be forecasted.
-    if windows_to_be_forecasted is None:
-        input_features['Windows to be forecasted'] = 1
-    else:
-        input_features['Windows to be forecasted'] = windows_to_be_forecasted
+        # The number of days to be forecasted.
+        if windows_to_be_forecasted is None:
+            input_features['Windows to be forecasted'] = 1
+        elif type(windows_to_be_forecasted) ==  int:
+            input_features['Windows to be forecasted'] = windows_to_be_forecasted
+        else:
+            print('Windows to be forecasted should be an integer')
+            sys.exit(1)
 
-    # Data forequency.
-    input_features['data_freq'] = datetimes[0:3].inferred_freq
+        # Data forequency.
+        input_features['data_freq'] = datetimes[0:3].inferred_freq
 
-    # number of processes parallel programming.
-    if core_usage is None:
-        input_features['core_usage'] = 8
-    else:
-        input_features['core_usage'] = core_usage
+        # number of processes parallel programming.
+        if core_usage is None:
+            input_features['core_usage'] = 8
+        elif type(core_usage) == int:
+            input_features['core_usage'] = core_usage
+        else:
+            print('Core usage should be an integer')
+            sys.exit(1)
 
-    try:
-        if check_time_zone == True:
-            datetimes.freq = input_features['data_freq']
-            data.index.levels[1].freq = input_features['data_freq']
-    except Exception:
-        pass
+        try:
+            if check_time_zone == True:
+                datetimes.freq = input_features['data_freq']
+                data.index.levels[1].freq = input_features['data_freq']
+        except Exception:
+            pass
 
-    if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
-        print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
+        if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
+            print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
 
-    # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
-    customers = {customer: Customers(customer,data) for customer in customers_nmi}
+        if input_features['Start training'] > input_features['End training']  or input_features['Last-observed-window'] < input_features['End training'] :
+            print('Error!!! Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
+            sys.exit(1)
+        
+        # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
+        customers = {customer: Customers(customer,data) for customer in customers_nmi}
 
-    return data, customers, input_features, customers_nmi, datetimes
-    # return data, customers_nmi,customers_nmi_with_pv,datetimes, customers, input_features
+        data_initialised = Initialise_output(data, customers, input_features, customers_nmi, datetimes)
+        
+        return data_initialised
+
+    except SystemExit:
+        print('Exiting program')
 
 
 # # ==================================================================================================# # ==================================================================================================
@@ -1128,20 +1130,9 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
                             exog = customers_proxy.loc[input_features['Start training']:input_features['End training']])
 
-    datetimes = customer.data.index
-
     check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
-    if check_time_zone_ == True:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq'],
-                        tz="Australia/Sydney").delete(-1)
-    else:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq']).delete(-1)
+    
+    new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
     customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
@@ -1227,17 +1218,7 @@ def forecast_pointbased_exog_time_single_node(customer: Customers, input_feature
                             exog = time_of_day.loc[input_features['Start training']:input_features['End training']])
 
     check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
-    if check_time_zone_ == True:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (customer.data.index[1]-customer.data.index[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (customer.data.index[1]-customer.data.index[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq'],
-                        tz="Australia/Sydney").delete(-1)
-    else:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (customer.data.index[1]-customer.data.index[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (customer.data.index[1]-customer.data.index[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq']).delete(-1)
+    new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
     customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
                                                         last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
@@ -1347,20 +1328,9 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
     customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
                             exog = customers_proxy.loc[input_features['Start training']:input_features['End training']])
 
-    datetimes = customer.data.index
-
     check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
-    if check_time_zone_ == True:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq'],
-                        tz="Australia/Sydney").delete(-1)
-    else:
-        new_index =  pd.date_range(
-                        start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0]),
-                        end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted']),
-                        freq=input_features['data_freq']).delete(-1)
+    
+    new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
     customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],

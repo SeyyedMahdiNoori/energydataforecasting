@@ -24,17 +24,17 @@ from converge_load_forecasting import initialise,forecast_pointbased_autoregress
 
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
-data, customers, input_features, customers_nmi, datetimes = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
+data_initialised = initialise(customersdatapath = customersdatapath,forecasted_param = 'active_power',end_training='2018-12-29',Last_observed_window='2018-12-29',windows_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
-nmi = customers_nmi[10]
-customer = customers[nmi]
+nmi = data_initialised.customers_nmi[10]
+customer = data_initialised.customers[nmi]
 
 # n number of customers (here arbitrarily 5 is chosen) to be forecasted parallely
-n_customers = {i: customers[customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(customers_nmi), size=5, replace=False)}
+n_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(data_initialised.customers_nmi), size=5, replace=False)}
 
 # n number of customers (here arbitrarily 5 is chosen) with know real-time values
-hist_data_proxy_customers = {i: customers[customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
+hist_data_proxy_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(data_initialised.customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
 
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
@@ -47,9 +47,9 @@ hist_data_proxy_customers = {i: customers[customers_nmi[i]] for i in np.random.d
 # # ==================================================
 
 # # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-res_autoregressive_single = forecast_pointbased_autoregressive_single_node(customer,input_features)
+res_autoregressive_single = forecast_pointbased_autoregressive_single_node(customer,data_initialised.input_features)
 res_autoregressive_single.to_csv('res_autoregressive_single.csv')
-# res_autoregressive_multi = forecast_pointbased_autoregressive_multiple_nodes(n_customers,input_features)      # # generate forecasting values for selected customers using a recursive multi-step point-forecasting method. 
+# res_autoregressive_multi = forecast_pointbased_autoregressive_multiple_nodes(n_customers,data_initialised.input_features)      # # generate forecasting values for selected customers using a recursive multi-step point-forecasting method. 
 
 print('autoregressive is done!')
 
@@ -58,27 +58,27 @@ print('autoregressive is done!')
 # # ==================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step probabilistic forecasting method
-res_interval_single = forecast_inetervalbased_single_node(customer,input_features)
+res_interval_single = forecast_inetervalbased_single_node(customer,data_initialised.input_features)
 res_interval_single.to_csv('res_interval_single.csv')
-# res_interval_multi = forecast_inetervalbased_multiple_nodes(n_customers,input_features)
+# res_interval_multi = forecast_inetervalbased_multiple_nodes(n_customers,data_initialised.input_features)
 
 print('interval-based is done!')
 
 # ================================================================
 # Direct recursive multi-step point-forecasting method
 # ================================================================
-res_direct_single = forecast_pointbased_direct_single_node(customer,input_features)
+res_direct_single = forecast_pointbased_direct_single_node(customer,data_initialised.input_features)
 res_direct_single.to_csv('res_direct_single.csv')
-# res_direct_multi = forecast_pointbased_direct_multiple_nodes(n_customers,input_features)
+# res_direct_multi = forecast_pointbased_direct_multiple_nodes(n_customers,data_initialised.input_features)
 
 print('direct is done!')
 
 # # ================================================================
 # # Stacking recursive multi-step point-forecasting method
 # # ================================================================
-res_stacking_single = forecast_pointbased_stacking_single_node(customer,input_features)
+res_stacking_single = forecast_pointbased_stacking_single_node(customer,data_initialised.input_features)
 res_stacking_single.to_csv('res_stacking_single.csv')
-# res_stacking_multi = forecast_pointbased_stacking_multiple_nodes(n_customers,input_features)
+# res_stacking_multi = forecast_pointbased_stacking_multiple_nodes(n_customers,data_initialised.input_features)
 
 print('stacking is done!')
 
@@ -86,16 +86,16 @@ print('stacking is done!')
 # # ================================================================
 # # Recitifed recursive multi-step point-forecasting method
 # # ================================================================
-res_rectified_single = forecast_pointbased_rectified_single_node(customer,input_features)
+res_rectified_single = forecast_pointbased_rectified_single_node(customer,data_initialised.input_features)
 res_rectified_single.to_csv('res_rectified_single.csv')
-# res_rectified_multi = forecast_pointbased_rectified_multiple_nodes(n_customers,input_features)
+# res_rectified_multi = forecast_pointbased_rectified_multiple_nodes(n_customers,data_initialised.input_features)
 
 print('recitifed is done!')
 
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meters
 # # ================================================================
-res_rep_lin_single_time_single = forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer,input_features)
+res_rep_lin_single_time_single = forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer,data_initialised.input_features)
 res_rep_lin_single_time_single.to_csv('res_rep_lin_single_time_single.csv')
 
 print('Load_forecasting Using linear regression of Reposit data and smart meters is done!')
@@ -103,7 +103,7 @@ print('Load_forecasting Using linear regression of Reposit data and smart meters
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
 # # ================================================================
-res_rep_lin_multi_time_single = forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,input_features)    
+res_rep_lin_multi_time_single = forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,data_initialised.input_features)    
 res_rep_lin_multi_time_single.to_csv('res_rep_lin_multi_time_single.csv')
 
 print('Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day is done!')
@@ -111,7 +111,7 @@ print('Load_forecasting Using linear regression of Reposit data and smart meter,
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meter
 # # ================================================================
-res_rep_exog = forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features)
+res_rep_exog = forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,data_initialised.input_features)
 res_rep_exog.to_csv('res_rep_exog.csv')
 
 print('Load_forecasting Using linear regression of Reposit data and smart meter is done!')
