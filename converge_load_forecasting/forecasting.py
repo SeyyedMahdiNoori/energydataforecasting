@@ -56,6 +56,7 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
     exog_time = exog_time.set_index(time_series_data_index)
     exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
     exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
+    exog_time['weekday'] = (time_series_data_index.day_of_week > 4).astype(int)
     exog_time.drop('datetime', axis=1, inplace=True)
 
     return exog_time
@@ -77,6 +78,17 @@ def generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict,
             start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
             end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
             freq=input_features['data_freq']).delete(-1)
+
+def generate_output_adjusted_format_for_predictions(result, customer, input_features):
+    
+    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.rename(columns={'index': 'datetime'}, inplace = True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
 
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
@@ -114,6 +126,27 @@ class Customers:
         # Train the forecaster using the train data
         self.forecaster_autoregressive.fit(y=self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
 
+    def generate_forecaster_autoregressive_time_exog(self, input_features):            
+        """
+        generate_forecaster_autoregressive_time_exog(input_features)
+        
+        This function generates a forecaster object to be used for a autoregressive recursive multi-step forecasting method.  
+        This function add to the generate_forecaster_autoregressive() function by considering time as an exogous varibale.
+        The function adds the forecaster to the customer instance.
+        """
+
+        # Create a forecasting object
+        self.forecaster_autoregressive_time_exog = ForecasterAutoreg(
+                regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),  
+                lags      = input_features['Window size']      
+            )
+
+        exog_time = encoding_cyclical_time_features(self.data.loc[input_features['Start training']:input_features['End training']].index)
+    
+        # Train the forecaster using the train data
+        self.forecaster_autoregressive_time_exog.fit(y = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+                                                   exog = exog_time.loc[input_features['Start training']:input_features['End training']])
+    
     def generate_forecaster_autoregressive_xgboost(self, input_features):            
         """
         generate_forecaster_autoregressive_xgboost(input_features)
@@ -256,7 +289,24 @@ class Customers:
         new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
         self.predictions_autoregressive = self.forecaster_autoregressive.predict(steps=len(new_index), last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
-        
+
+    def generate_prediction_autoregressive_time_exog(self,input_features):
+            """
+            generate_prediction_autoregressive_time_exog(self,input_features)
+            
+            This function outputs the prediction values using a Recursive autoregressive multi-step point-forecasting method.          
+            """
+            
+            # generate datetime index for the predicted values based on the window size and the last obeserved window.
+            new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
+
+            exog_time = encoding_cyclical_time_features(new_index)
+
+            self.predictions_autoregressive_time_exog = self.forecaster_autoregressive_time_exog.predict(steps=len(new_index),
+                                                                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                                                                                        exog = (exog_time.reset_index()).drop('index', axis=1)
+                                                                                                                        ).to_frame().set_index(new_index)        
+
 
     def generate_prediction_autoregressive_xgboost(self,input_features):
         """
@@ -642,13 +692,7 @@ def forecast_pointbased_autoregressive_single_node(customer: Customers, input_fe
     # Generate predictions 
     customer.generate_prediction_autoregressive(input_features)
 
-    result = customer.predictions_autoregressive
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_autoregressive, customer, input_features)
 
     return result
 
@@ -662,6 +706,47 @@ def forecast_pointbased_autoregressive_multiple_nodes(customers: Dict[Union[int,
     of input preferences generated by the initilase function.
     """
     predictions_prallel = pool_executor_parallel(forecast_pointbased_autoregressive_single_node,customers.values(),input_features)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
+
+# # ================================================================
+# # Autoregressive recursive multi-step point-forecasting method using time as exogounos
+# # ================================================================
+
+# This function outputs the forecasting for each nmi
+def forecast_pointbased_autoregressive_time_exog_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_time_exog_single_node(customers_nmi,input_features)
+
+    This function generates forecasting values for each customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function. It uses time as an exogous varibale which is encoded using trigonometric functions.
+    """
+    
+    # print(customer's nmi)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    # Train a forecasting object
+    customer.generate_forecaster_autoregressive_time_exog(input_features)
+    
+    # Generate predictions 
+    customer.generate_prediction_autoregressive_time_exog(input_features)
+
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_autoregressive_time_exog, customer, input_features)
+
+    return result
+
+def forecast_pointbased_autoregressive_multiple_nodes_time_exog(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+    predictions_prallel = pool_executor_parallel(forecast_pointbased_autoregressive_time_exog_single_node,customers.values(),input_features)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -690,13 +775,7 @@ def forecast_pointbased_autoregressive_xgboost_single_node(customer: Customers, 
     # Generate predictions 
     customer.generate_prediction_autoregressive_xgboost(input_features)
 
-    result = customer.predictions_autoregressive_xgboost
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_autoregressive_xgboost, customer, input_features)
 
     return result
 
@@ -738,13 +817,7 @@ def forecast_pointbased_autoregressive_xgboost_time_exog_single_node(customer: C
     # Generate predictions 
     customer.generate_prediction_autoregressive_xgboost_time_exog(input_features)
 
-    result = customer.predictions_autoregressive_xgboost_time_exog
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_autoregressive_xgboost_time_exog, customer, input_features)
 
     return result
 
@@ -786,13 +859,7 @@ def forecast_pointbased_rectified_single_node(customer: Customers, input_feature
     # Generate predictions 
     customer.generate_prediction_rectified(input_features)
 
-    result = customer.predictions_rectified
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_rectified, customer, input_features)
 
     return result
 
@@ -836,13 +903,7 @@ def forecast_pointbased_direct_single_node(customer: Customers, input_features: 
     # Generate predictions 
     customer.generate_prediction_direct(input_features)
 
-    result = customer.predictions_direct
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_direct, customer, input_features)
 
     return result
 
@@ -885,13 +946,7 @@ def forecast_pointbased_stacking_single_node(customer: Customers, input_features
     # Generate predictions 
     customer.generate_prediction_stacking(input_features)
 
-    result = customer.predictions_stacking
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_stacking, customer, input_features)
 
     return result
 
@@ -935,13 +990,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     # Generate interval predictions 
     customer.generate_interval_prediction(input_features)
     
-    result = customer.interval_predictions
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.interval_predictions, customer, input_features)
 
     return result
 
@@ -1147,18 +1196,12 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     
     new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
-    customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
+    customer.predictions_exog_proxy = customer.forecaster.predict(steps = len(new_index),
                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
                                                        exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
     
 
-    result = customer.predictions_exog_rep
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_exog_proxy, customer, input_features)
 
     return result
 
@@ -1201,51 +1244,6 @@ def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: D
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     return predictions_prallel
-
-
-# # ================================================================
-# # Load_forecasting Using linear regression of time of day as a exogenous variables
-# # ================================================================
-def forecast_pointbased_exog_time_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
-    """
-    forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features)
-
-    This function generates forecasting values for a customer at using the some customers real-time measurements as proxies for a target customer.
-    It uses the same the sk-forecast built in function that allows to use exogenous variables when forecasting a target customer. 
-    More about this function can be found in "https://joaquinamatrodrigo.github.io/skforecast/0.4.3/notebooks/autoregresive-forecaster-exogenous.html".
-
-    It requires three inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
-    The second input is the target customer instance generated by the initilase function.
-    And, the third input is the input_features which is a dictionary of input preferences generated by the initilase function.
-    """    
-    
-    time_of_day = pd.DataFrame(customer.data.index.strftime("%H%M%S").astype(int),index=customer.data.index)
-    time_of_day['weekday'] = (customer.data.index.day_of_week > 4).astype(int)
-
-    customer.forecaster = ForecasterAutoreg(
-            regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),  
-            lags      = input_features['Window size']     
-        )
-
-    customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
-                            exog = time_of_day.loc[input_features['Start training']:input_features['End training']])
-
-    check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
-    new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
-
-    customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
-                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                        exog = time_of_day.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
-
-
-    result = customer.predictions_exog_rep
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
-
-    return result
 
 
 # # ================================================================
@@ -1333,30 +1331,23 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
     # customers_proxy['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
     # customers_proxy['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
 
-    customer.forecaster = ForecasterAutoreg(
+    customer.forecaster_xgboost_proxy = ForecasterAutoreg(
             regressor = xgboost.XGBRegressor(),  
             lags      = input_features['Window size']     
         )
 
-    customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+    customer.forecaster_xgboost_proxy.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
                             exog = customers_proxy.loc[input_features['Start training']:input_features['End training']])
 
     check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
     
     new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
-    customer.predictions_exog_rep = customer.forecaster.predict(steps = len(new_index),
+    customer.predictions_xgboost_exog_proxy = customer.forecaster_xgboost_proxy.predict(steps = len(new_index),
                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
                                                        exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
     
-
-    result = customer.predictions_exog_rep
-    result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
-    nmi = [customer.nmi] * len(result)
-    result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions_xgboost_exog_proxy, customer, input_features)
 
     return result
 
