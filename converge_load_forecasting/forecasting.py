@@ -304,7 +304,7 @@ class Customers:
 
             self.predictions_autoregressive_time_exog = self.forecaster_autoregressive_time_exog.predict(steps=len(new_index),
                                                                                                                         last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                                                                                        exog = (exog_time.reset_index()).drop('index', axis=1)
+                                                                                                                        exog = exog_time
                                                                                                                         ).to_frame().set_index(new_index)        
 
 
@@ -334,7 +334,7 @@ class Customers:
 
         self.predictions_autoregressive_xgboost_time_exog = self.forecaster_autoregressive_xgboost_time_exog.predict(steps=len(new_index),
                                                                                                                     last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                                                                                    exog = (exog_time.reset_index()).drop('index', axis=1)
+                                                                                                                    exog = exog_time
                                                                                                                     ).to_frame().set_index(new_index)
 
     def generate_prediction_direct(self,input_features):
@@ -628,9 +628,8 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             sys.exit(1)
 
         try:
-            if check_time_zone == True:
-                datetimes.freq = input_features['data_freq']
-                data.index.levels[1].freq = input_features['data_freq']
+            datetimes.freq = input_features['data_freq']
+            data.index.levels[1].freq = input_features['data_freq']
         except Exception:
             pass
 
