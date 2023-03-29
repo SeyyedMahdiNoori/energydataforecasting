@@ -2,9 +2,12 @@ import pandas as pd
 import numpy as np
 import copy
 import sklearn
-from sklearn.tree import  DecisionTreeRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import  HistGradientBoostingRegressor
+from skforecast.ForecasterAutoregMultiVariate import ForecasterAutoregMultiVariate
 import skforecast 
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
+from skforecast.ForecasterAutoregMultiSeries import ForecasterAutoregMultiSeries
 import datetime
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
@@ -620,7 +623,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # number of processes parallel programming.
         if core_usage is None:
-            input_features['core_usage'] = 8
+            input_features['core_usage'] = 40
         elif type(core_usage) == int:
             input_features['core_usage'] = core_usage
         else:
@@ -1259,7 +1262,6 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
                                      number_of_proxy_customers: Union[int, None] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
         
-
     # create a dictionary of customers with the participant nmi as keys.
     customers_partipant = {i: copy.deepcopy(customers[i]) for i in participants}
 
@@ -1280,7 +1282,8 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
 
     # generate forecate for participant customers.
     participants_pred = forecast_pointbased_autoregressive_multiple_nodes(customers_partipant, input_features)
-
+    # participants_pred = forecast_multiseries_recusrive_autoregresive(customers_partipant, input_features)
+    
     # combine forecast and historical data for participant customers.
     for i in participants_pred.index.levels[0]:
         temp = pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]])
@@ -1360,6 +1363,74 @@ def forecast_pointbased_exog_reposit_time_xgboost_multiple_nodes(hist_data_proxy
     """
 
     predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_time_xgboost_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers)
+ 
+    predictions_prallel = pd.concat(predictions_prallel, axis=0)
+
+    return predictions_prallel
+
+# # ================================================================
+# # Load_forecasting Using multi-series approach (multivariate and non-multivariate)
+# # ================================================================
+
+def forecast_multiseries_recusrive_autoregresive(n_customers,input_features):
+    forecaster_ms = ForecasterAutoregMultiSeries(
+                    regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()), # or use "regressor = HistGradientBoostingRegressor(random_state=123)," if the training set is big (n_sample >10000)
+                    lags               = input_features['Window size'],
+                    transformer_series = sklearn.preprocessing.StandardScaler(),
+                )
+    
+    forecaster_ms.fit(pd.DataFrame({i: n_customers[i].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']] for i in n_customers.keys()}))
+
+    time_zone_info = has_timezone(next(iter(n_customers.items()))[1].data.index[0])
+
+    new_index = generate_index_for_predicted_values(time_zone_info, input_features, n_customers[list(n_customers.keys())[0]].data.index[1] - n_customers[list(n_customers.keys())[0]].data.index[0])
+    pred_ = forecaster_ms.predict(steps=len(new_index),
+                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
+                                ).set_index(new_index).rename_axis('datetime')
+
+    return pd.melt(pred_.reset_index(),  id_vars='datetime' ,var_name='nmi', value_name='value').set_index(['nmi', 'datetime'])
+
+def forecast_multivariate_recusrive_autoregresive_single_node(n_customers,customer,input_features,number_of_proxy_customers = None):
+
+    # print(customer's nmi)
+    print(" Customer nmi: {first}".format(first = customer.nmi))
+
+    time_zone_info = has_timezone(customer.data.index[0])
+    
+    new_index = generate_index_for_predicted_values(time_zone_info, input_features, n_customers[list(n_customers.keys())[0]].data.index[1] - n_customers[list(n_customers.keys())[0]].data.index[0])
+    
+    forecaster = ForecasterAutoregMultiVariate(
+                    regressor          = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),
+                    level              = customer.nmi,
+                    lags               = input_features['Window size'],
+                    steps              = len(new_index)
+                )
+
+    forecaster.fit(series=pd.DataFrame({i: n_customers[i].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']] for i in n_customers.keys()}))
+    
+    result = forecaster.predict(steps=len(new_index),
+                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
+                                ).set_index(new_index).rename_axis('datetime')
+
+    result.rename(columns={customer.nmi: input_features['Forecasted_param']}, inplace = True)
+    nmi = [customer.nmi] * len(result)
+    result['nmi'] = nmi
+    result.reset_index(inplace=True)
+    result.set_index(['nmi', 'datetime'], inplace=True)
+
+    return result
+
+def forecast_multivariate_recusrive_autoregresive_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+    """
+    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
+
+    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
+    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
+    of input preferences generated by the initilase function.
+    """
+
+
+    predictions_prallel = pool_executor_parallel_exog(forecast_multivariate_recusrive_autoregresive_single_node,customers,customers.values(),input_features,number_of_proxy_customers)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
