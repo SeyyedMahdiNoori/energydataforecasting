@@ -59,7 +59,7 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
     exog_time = exog_time.set_index(time_series_data_index)
     exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
     exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-    exog_time['weekday'] = (time_series_data_index.day_of_week > 4).astype(int)
+    # exog_time['weekday'] = (time_series_data_index.day_of_week > 4).astype(int)
     exog_time.drop('datetime', axis=1, inplace=True)
 
     return exog_time
@@ -191,7 +191,7 @@ class Customers:
         elif input_features['algorithm'] == 'stacking':
 
             self.forecaster = tsprial.forecasting.ForecastingStacked(
-                                estimator = input_features['regressor'],
+                                input_features['regressor'],
                                 test_size = input_features['Window size']* input_features['Windows to be forecasted'],
                                 lags = range(1,input_features['Window size']+1),
                                 use_exog = input_features['exog']
@@ -218,6 +218,22 @@ class Customers:
 
             self.predictions = pd.DataFrame(self.forecaster.predict(Customers.f_steps
                                                                     ),index = Customers.new_index ,columns=['pred'])
+        
+    def generate_interval_prediction(self,input_features):
+        """
+        generate_interval_prediction(self,input_features)
+        
+        This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
+        The confidence level can be set in the function parameters as "interval = [10, 90]".
+        """  
+
+        # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
+        self.interval_predictions = self.forecaster.predict_interval(steps=len(Customers.new_index),
+                                                                        interval = [10, 90],
+                                                                        n_boot = 1000,
+                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                                        exog = Customers.exog_f
+                                                                        ).set_index(Customers.new_index)
 
     def generate_optimised_forecaster_object(self,input_features):            
         """
@@ -256,26 +272,6 @@ class Customers:
                         return_best = True,
                         verbose     = False
                 )
-        
-    def generate_interval_prediction(self,input_features):
-        """
-        generate_interval_prediction(self,input_features)
-        
-        This function outputs three sets of values (a lower bound, an upper bound and the most likely value), using a recursive multi-step probabilistic forecasting method.
-        The confidence level can be set in the function parameters as "interval = [10, 90]".
-        """
-
-        # generate datetime index for the predicted values based on the window size and the last obeserved window.
-        new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])      
-
-        # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        self.interval_predictions = self.forecaster_autoregressive.predict_interval(steps=len(new_index),
-                                                                        interval = [10, 90],
-                                                                        n_boot = 1000,
-                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]
-                                                                        ).set_index(new_index)
-        # self.predictions                   = self.forecaster.predict(steps=len(new_index),                                    last_window=self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']]).to_frame().set_index(new_index)
-
 
     def generate_disaggregation_using_reactive(self,input_features):
         '''
@@ -559,10 +555,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         if algorithm is None:
             input_features['algorithm'] = 'iterated'
-        elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacked':
+        elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking':
             input_features['algorithm'] = algorithm
         else:
-            print(f"Error! {algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacked' or 'rectified'.")
+            print(f"Error! {algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified'.")
             sys.exit(1) 
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
@@ -700,6 +696,9 @@ def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Custom
     of input preferences generated by the initilase function.
     """
 
+    nmi = list(customers.keys())[0]
+    add_exog_for_forecasting(customers[nmi], input_features)
+    
     predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
