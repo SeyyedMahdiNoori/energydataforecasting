@@ -190,7 +190,7 @@ data_initialised.input_features['algorithm'] = 'direct'
 prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
-prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-iterated-LR')
+prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-direct-LR')
 customer[nmi].data[data_initialised.input_features['Forecasted_param']].loc[prediction.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
 ax.set_title('Prediction vs real demand')
 ax.legend()
@@ -306,7 +306,7 @@ plt.show()
 res_rep_exog = forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer[nmi],data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
-res_rep_exog.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='exogenous')
+res_rep_exog.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_single_time-exogenous')
 customer[nmi].data[data_initialised.input_features['Forecasted_param']].loc[res_rep_exog.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
 ax.set_title('Prediction vs real demand')
 ax.legend()

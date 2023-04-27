@@ -128,6 +128,16 @@ def select_loss_function(loss_function_input: str) -> sklearn.pipeline.Pipeline:
 
     return loss_function
 
+def fill_in_missing_data(data):
+    set_diff = pd.date_range(start=data.index.levels[1][0],
+                                   end=data.index.levels[1][-1],
+                                   freq='5T')
+    df_new = data.reindex(pd.MultiIndex.from_product([data.index.levels[0], set_diff], names=data.index.names))
+    df_new.update(data)
+    df_new = df_new.fillna(0)
+
+    return df_new
+
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
 # # ================================================================
@@ -324,8 +334,9 @@ class Customers:
 #                 self.datetimes = datetimes
 
 class Initialise_output:
-            def __init__(self, customers, input_features, customers_nmi, datetimes) -> None:
+            def __init__(self, data, customers, input_features, customers_nmi, datetimes) -> None:
                 self.customers = customers
+                self.data = data
                 self.input_features = input_features
                 self.customers_nmi = customers_nmi
                 self.datetimes = datetimes
@@ -503,7 +514,13 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             sys.exit(1)
 
         # Data forequency.
-        input_features['data_freq'] = datetimes[0:3].inferred_freq
+        if datetimes.inferred_freq == None:
+            print('Warning!!! Data from missing dates are replaced with zero!')
+            data = fill_in_missing_data(data)
+            datetimes = pd.DatetimeIndex(data.index.unique('datetime'))
+
+        input_features['data_freq'] = datetimes.inferred_freq
+        # input_features['data_freq'] = datetimes[0:3].inferred_freq
 
         # number of processes parallel programming.
         if core_usage is None:
@@ -564,8 +581,8 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
 
-        # data_initialised = Initialise_output(data, customers, input_features, customers_nmi, datetimes)
-        data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes)
+        data_initialised = Initialise_output(data, customers, input_features, customers_nmi, datetimes)
+        # data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes)
         
         return data_initialised
 
