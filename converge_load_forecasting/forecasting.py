@@ -3,7 +3,7 @@ import numpy as np
 import copy
 import sklearn
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import  HistGradientBoostingRegressor
+from sklearn.ensemble import  HistGradientBoostingRegressor, RandomForestRegressor
 from skforecast.ForecasterAutoregMultiVariate import ForecasterAutoregMultiVariate
 import skforecast 
 from skforecast.ForecasterAutoreg import ForecasterAutoreg
@@ -65,24 +65,6 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
 
     return exog_time
 
-def generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict, deltatime: datetime.timedelta) -> pd.DatetimeIndex:
-    '''
-    generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict, deltatime: datetime.timedelta) -> pd.DatetimeIndex
-    This function generate index values for the forecasting functions based on the values in the input_feature, partcularly how many windows should be forecasted and the last observed window.
-    '''
-
-    if data_tzinfo == True:
-        return pd.date_range(
-            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
-            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
-            freq=input_features['data_freq'],
-            tz="Australia/Sydney").delete(-1)
-    else:
-        return pd.date_range(
-            start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
-            end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
-            freq=input_features['data_freq']).delete(-1)
-
 def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, customer, input_features: Dict) -> pd.DataFrame:
     '''
     generate_output_adjusted_format_for_predictions(result: pd.DataFrame, customer, input_features: Dict) -> pd.DataFrame
@@ -112,6 +94,8 @@ def select_regressor(regressor_input: str, loss_function: Union[sklearn.pipeline
     elif regressor_input == 'XGBoost':
         regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor())
         # regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor(eval_metric = sklearn.metrics.mean_absolute_error))
+    elif regressor_input == 'RandomForest':
+        regressor = sklearn.pipeline.make_pipeline(RandomForestRegressor(random_state=123))
 
     return regressor
 
@@ -129,15 +113,60 @@ def select_loss_function(loss_function_input: str) -> sklearn.pipeline.Pipeline:
 
     return loss_function
 
-def fill_in_missing_data(data):
+def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
     set_diff = pd.date_range(start=data.index.levels[1][0],
                                    end=data.index.levels[1][-1],
-                                   freq='5T')
+                                   freq=data.index[0:3].inferred_freq)
     df_new = data.reindex(pd.MultiIndex.from_product([data.index.levels[0], set_diff], names=data.index.names))
     df_new.update(data)
     df_new = df_new.fillna(0)
 
     return df_new
+
+def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: Dict) -> Tuple[str, str, str, str, pd.DataFrame, str]:
+
+    # The datetime index that training starts from
+    if input_features['Start training'] is None:
+        start_training = customer_data.index[0].strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        start_training = max(input_features['Start training'],customer_data.index[0].strftime("%Y-%m-%d %H:%M:%S"))
+
+    # The last datetime index used for trainning.
+    if input_features['End training'] is None:
+        end_training = customer_data.index[-1].strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        end_training = min(input_features['End training'],customer_data.index[-1].strftime("%Y-%m-%d %H:%M:%S"))
+
+    # The last obersved window. The forecasting values are generated after this time index.
+    if input_features['Last-observed-window'] is None:
+        last_observed_window = end_training
+    else:
+        last_observed_window = min(end_training,customer_data.index[-1].strftime("%Y-%m-%d %H:%M:%S"))
+
+    # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
+    # For example, for a data with resolution 30th minutely, the window size woul be 48.
+    if input_features['window size'] is None:
+        window_size = int(datetime.timedelta(days = 1) / (customer_data.index[1] - customer_data.index[0]))
+    else:
+        window_size = input_features['window size']
+
+    # Data forequency.
+    if customer_data.index.inferred_freq == None:
+        print('Warning!!! Data from missing dates are replaced with zero!')
+        data = fill_in_missing_data(customer_data)
+        data.index.freq = customer_data.index.inferred_freq
+    else:
+        data = customer_data
+        data.index.freq = customer_data.index.inferred_freq
+
+    # data frequency
+    data_freq = data.index.inferred_freq
+
+    if start_training > end_training  or last_observed_window < end_training :
+            print('Error!!! Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
+            sys.exit(1)
+
+    return start_training, end_training, last_observed_window, window_size, data, data_freq
 
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
@@ -151,7 +180,12 @@ class Customers:
     def __init__(self, nmi, data, input_features):
 
         self.nmi = nmi      # store nmi in each object              
-        self.data = data.loc[self.nmi]      # store data in each object         
+        
+        [self.start_training, self.end_training,
+          self.last_observed_window, self.window_size,
+            self.data, self.data_freq] = fill_input_dates_per_customer(data.loc[self.nmi],input_features)
+        
+        # self.data = data.loc[self.nmi]      # store data in each object         
 
         Customers.instances.append(self.nmi)
 
@@ -165,43 +199,43 @@ class Customers:
 
             self.forecaster = ForecasterAutoreg(
                     regressor = input_features['regressor'],  
-                    lags      = input_features['Window size']      
+                    lags      = self.window_size     
                 )
             
-            self.forecaster.fit(y = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+            self.forecaster.fit(y = self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']],
                                 exog = self.exog)
 
         elif input_features['algorithm'] == 'direct':
 
             self.forecaster = tsprial.forecasting.ForecastingChain(
             estimator = input_features['regressor'],
-            n_estimators = input_features['Window size'],
-            lags = range(1,input_features['Window size']+1),
+            n_estimators = self.window_size,
+            lags = range(1,self.window_size+1),
             use_exog = input_features['exog'],
             accept_nan = False
                                 )
             
-            self.forecaster.fit(self.exog, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+            self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
         elif input_features['algorithm'] == 'rectified':
             self.forecaster = tsprial.forecasting.ForecastingRectified(
                         estimator = input_features['regressor'],
                         n_estimators = 200,
-                        test_size = input_features['Window size']* input_features['Windows to be forecasted'],
-                        lags = range(1,input_features['Window size']+1),
+                        test_size = self.window_size * input_features['days to be forecasted'],
+                        lags = range(1, self.window_size + 1),
                         use_exog = input_features['exog']
                                             )
-            self.forecaster.fit(self.exog, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+            self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
         elif input_features['algorithm'] == 'stacking':
 
             self.forecaster = tsprial.forecasting.ForecastingStacked(
                                 input_features['regressor'],
-                                test_size = input_features['Window size']* input_features['Windows to be forecasted'],
-                                lags = range(1,input_features['Window size']+1),
+                                test_size = self.window_size * input_features['days to be forecasted'],
+                                lags = range(1, self.window_size + 1),
                                 use_exog = input_features['exog']
                                                     )
-            self.forecaster.fit(self.exog, self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+            self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
     def generate_prediction(self, input_features):
         """
@@ -215,14 +249,14 @@ class Customers:
 
         if input_features['algorithm'] == 'iterated':
 
-            self.predictions = self.forecaster.predict(steps = len(Customers.new_index ),
-                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                        exog = Customers.exog_f).to_frame().set_index(Customers.new_index )
+            self.predictions = self.forecaster.predict(steps = len(self.new_index ),
+                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
+                                                        exog = self.exog_f).to_frame().set_index(self.new_index )
 
         else:
 
-            self.predictions = pd.DataFrame(self.forecaster.predict(Customers.f_steps
-                                                                    ),index = Customers.new_index ,columns=['pred'])
+            self.predictions = pd.DataFrame(self.forecaster.predict(self.f_steps
+                                                                    ),index = self.new_index ,columns=['pred'])
         
     def generate_interval_prediction(self,input_features):
         """
@@ -233,12 +267,12 @@ class Customers:
         """  
 
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        self.interval_predictions = self.forecaster.predict_interval(steps=len(Customers.new_index),
+        self.interval_predictions = self.forecaster.predict_interval(steps=len(self.new_index),
                                                                         interval = [10, 90],
                                                                         n_boot = 1000,
-                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
-                                                                        exog = Customers.exog_f
-                                                                        ).set_index(Customers.new_index)
+                                                                        last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
+                                                                        exog = self.exog_f
+                                                                        ).set_index(self.new_index)
 
     def generate_optimised_forecaster_object(self,input_features):            
         """
@@ -255,7 +289,7 @@ class Customers:
 
         self.forecaster = ForecasterAutoreg(
                 regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),
-                lags      = input_features['Window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
+                lags      = input_features['window size']      # The used data set has a 30-minute resolution. So, 48 denotes one full day window
             )
 
         # Regressor's hyperparameters
@@ -266,13 +300,13 @@ class Customers:
         # optimise the forecaster
         skforecast.model_selection.grid_search_forecaster(
                         forecaster  = self.forecaster,
-                        y           = self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
+                        y           = self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']],
                         param_grid  = param_grid,
                         # lags_grid   = lags_grid,
-                        steps       =  input_features['Window size'],
+                        steps       =  self.window_size,
                         metric      = 'mean_absolute_error',
                         # refit       = False,
-                        initial_train_size = len(self.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']]) - input_features['Window size'] * input_features['Windows to be forecasted'],
+                        initial_train_size = len(self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']]) - self.window_size * input_features['days to be forecasted'],
                         # fixed_train_size   = False,
                         return_best = True,
                         verbose     = False
@@ -342,14 +376,14 @@ class Initialise_output:
 def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, Last_observed_window: Union[str, None] = None,
-                window_size: Union[int, None] = None, windows_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
+                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
                 db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
                 exog: Union[bool, None] = None, algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, Last_observed_window: Union[str, None] = None,
-                window_size: Union[int, None] = None, windows_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
+                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
                 db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Union[Initialise_output,None]: 
 
     This function is to initialise the data and the input parameters required for the rest of the functions in this package. It requires one of the followings: 
@@ -396,7 +430,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         data.set_index(['nmi', 'datetime'], inplace=True)
 
         # save unique dates of the data
-        datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime'))
+        datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
 
         # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
         # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
@@ -414,7 +448,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # The datetime index that training starts from
         if start_training is None:
-            input_features['Start training'] = datetimes[0].strftime("%Y-%m-%d %H:%M:%S")
+            input_features['Start training'] = None
         elif len(start_training) == 10:
             try:
                 datetime.datetime.strptime(start_training,'%Y-%m-%d')
@@ -435,7 +469,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # The last datetime index used for trainning.
         if end_training is None:
-            input_features['End training'] = (datetimes[-1]).strftime("%Y-%m-%d %H:%M:%S")
+            input_features['End training'] = None
         elif len(end_training) == 10:
             try:
                 datetime.datetime.strptime(end_training,'%Y-%m-%d')
@@ -475,46 +509,24 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             print('Error!!! Last_observed_window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
             sys.exit(1)
 
-        # Select customers with pv. This is used to read the "nmi.csv" file, used in the Converge project.
-        if nmi_type_path is None:
-            customers_nmi_with_pv = copy.deepcopy(customers_nmi)
-        else:
-            input_features['nmi_type_path'] = nmi_type_path
-            data_nmi = pd.read_csv(nmi_type_path)
-            data_nmi.set_index(data_nmi['nmi'],inplace=True)
-
-            customers_nmi_with_pv = [ data_nmi.loc[i]['nmi'] for i in customers_nmi if data_nmi.loc[i]['has_pv']==True ]
-            data['has_pv']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['has_pv']] for i in customers_nmi]* len(datetimes)))
-            data['customer_kind']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['customer_kind']] for i in customers_nmi]* len(datetimes)))
-            data['pv_system_size']  = list(itertools.chain.from_iterable([ [data_nmi.loc[i]['pv_system_size']] for i in customers_nmi]* len(datetimes)))
-
         # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
         # For example, for a data with resolution 30th minutely, the window size woul be 48.
         if window_size is None:
-            input_features['Window size'] = int(datetime.timedelta(days = 1) / (datetimes[1] - datetimes[0]))
+            input_features['window size'] = None
         elif type(window_size)==int:
-            input_features['Window size'] = window_size
+            input_features['window size'] = window_size
         else:
             print('window size should be an integer')
             sys.exit(1)
 
         # The number of days to be forecasted.
-        if windows_to_be_forecasted is None:
-            input_features['Windows to be forecasted'] = 1
-        elif type(windows_to_be_forecasted) ==  int:
-            input_features['Windows to be forecasted'] = windows_to_be_forecasted
+        if days_to_be_forecasted is None:
+            input_features['days to be forecasted'] = 1
+        elif type(days_to_be_forecasted) ==  int:
+            input_features['days to be forecasted'] = days_to_be_forecasted
         else:
-            print('Windows to be forecasted should be an integer')
+            print('days to be forecasted should be an integer')
             sys.exit(1)
-
-        # Data forequency.
-        if datetimes.inferred_freq == None:
-            print('Warning!!! Data from missing dates are replaced with zero!')
-            data = fill_in_missing_data(data)
-            datetimes = pd.DatetimeIndex(data.index.unique('datetime'))
-
-        input_features['data_freq'] = datetimes.inferred_freq
-        # input_features['data_freq'] = datetimes[0:3].inferred_freq
 
         # number of processes parallel programming.
         if core_usage is None:
@@ -525,25 +537,21 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             print('Core usage should be an integer')
             sys.exit(1)
 
-        try:
-            datetimes.freq = input_features['data_freq']
-            data.index.levels[1].freq = input_features['data_freq']
-        except Exception:
-            pass
+        # try:
+        #     datetimes.freq = input_features['data_freq']
+        #     data.index.levels[1].freq = input_features['data_freq']
+        # except Exception:
+        #     pass
 
         if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
             print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
 
-        if input_features['Start training'] > input_features['End training']  or input_features['Last-observed-window'] < input_features['End training'] :
-            print('Error!!! Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
-            sys.exit(1)
-
         if regressor_input is None:
             regressor_input = 'LinearRegression'
-        elif regressor_input == 'LinearRegression' or regressor_input == 'XGBoost':
+        elif regressor_input == 'LinearRegression' or regressor_input == 'XGBoost' or regressor_input == 'RandomForest':
             pass
         else:
-            print(f"Error! {regressor_input} is NOT a valid regressor. The regressor_input should be 'LinearRegression' or 'XGBoost'.")
+            print(f"Error! {regressor_input} is NOT a valid regressor. The regressor_input should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
             sys.exit(1)
         
         if loss_function is None:
@@ -601,6 +609,25 @@ def pool_executor_parallel(function_name, repeat_iter, input_features):
     return results
 
 
+def generate_index_for_predicted_values(customer: Customers, input_features: Dict) -> pd.DatetimeIndex:
+    '''
+    generate_index_for_predicted_values(data_tzinfo: bool, input_features: Dict, deltatime: datetime.timedelta) -> pd.DatetimeIndex
+    This function generate index values for the forecasting functions based on the values in the input_feature, partcularly how many windows should be forecasted and the last observed window.
+    '''
+
+    deltatime = customer.data.index[1]-customer.data.index[0]
+    if customer.check_time_zone_class == True:
+        return pd.date_range(
+            start=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime,
+            end=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['days to be forecasted']),
+            freq = customer.data_freq,
+            tz="Australia/Sydney").delete(-1)
+    else:
+        return pd.date_range(
+            start=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime,
+            end=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['days to be forecasted']),
+            freq=customer.data_freq).delete(-1)
+
 # # ================================================================
 # # Autoregressive recursive multi-step point-forecasting method
 # # ================================================================
@@ -612,16 +639,16 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None:
     if the user do not wish to consider these exogenous variables.
     '''
     
-    Customers.new_index = generate_index_for_predicted_values(customer.check_time_zone_class, input_features, customer.data.index[1] - customer.data.index[0])
+    customer.new_index = generate_index_for_predicted_values(customer, input_features)
 
     if input_features['exog'] == True:
-        Customers.exog = encoding_cyclical_time_features(customer.data.loc[input_features['Start training']:input_features['End training']].index)
-        Customers.exog_f = encoding_cyclical_time_features(Customers.new_index)
-        Customers.f_steps = copy.deepcopy(Customers.exog_f)
+        customer.exog = encoding_cyclical_time_features(customer.data.loc[customer.start_training:customer.end_training].index)
+        customer.exog_f = encoding_cyclical_time_features(customer.new_index)
+        customer.f_steps = copy.deepcopy(customer.exog_f)
     else:
-        Customers.exog = None
-        Customers.exog_f = None
-        Customers.f_steps = np.arange(len(Customers.new_index))
+        customer.exog = None
+        customer.exog_f = None
+        customer.f_steps = np.arange(len(customer.new_index))
 
 # This function outputs the forecasting for each nmi
 def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
@@ -636,6 +663,9 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
     print("Customer nmi: {nmi}, {precent}% completed".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100)))
     # print("{pid}: Customer nmi: {first}, {ts}".format(pid=os.getpid(), first = customer.nmi, ts=datetime.datetime.now()))
 
+    # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
+    add_exog_for_forecasting(customer, input_features)
+
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
 
@@ -647,8 +677,6 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
     return result
 
 def forecast_pointbased_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
-
-    add_exog_for_forecasting(customer, input_features)
 
     return run_forecast_pointbased_single_node(customer, input_features)
 
@@ -662,9 +690,6 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     of input preferences generated by the initilase function.
     """
 
-    nmi = list(customers.keys())[0]
-    add_exog_for_forecasting(customers[nmi], input_features)
-
     predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features)
 
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
@@ -673,10 +698,6 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
 
 
 def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
-
-
-    nmi = list(customers.keys())[0]
-    add_exog_for_forecasting(customers[nmi], input_features)
 
     preds = [run_forecast_pointbased_single_node(customers[i],input_features) for i in customers.keys()]
 
@@ -696,8 +717,11 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     of input preferences generated by the initilase function.
     """
 
-    print(" Customer nmi: {first}".format(first = customer.nmi))
-
+    print("Customer nmi: {nmi}, {precent}% completed".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100)))
+    
+    # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
+    add_exog_for_forecasting(customer, input_features)
+    
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
     
@@ -716,9 +740,6 @@ def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Custom
     It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
     of input preferences generated by the initilase function.
     """
-
-    nmi = list(customers.keys())[0]
-    add_exog_for_forecasting(customers[nmi], input_features)
     
     predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
@@ -734,7 +755,7 @@ def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,s
     
     cus_rep = pd.concat([pd.DataFrame(hist_data_proxy_customers[i].data[input_features['Forecasted_param']]).rename(columns={input_features['Forecasted_param']: i}) for i in hist_data_proxy_customers.keys()],axis=1)
     
-    corr = cus_rep.loc[input_features['Start training']:input_features['End training']].corrwith(customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
+    corr = cus_rep.loc[customer.start_training:customer.end_training].corrwith(customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']])
     corr.sort_values(ascending=False,inplace=True)
 
     corr = corr.head(min(3*number_of_proxy_customers,len(hist_data_proxy_customers.keys())))
@@ -742,7 +763,7 @@ def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,s
 
     try:
         for i in cus_rep.columns:
-            if sm.tsa.stattools.grangercausalitytests(pd.concat([customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']], cus_rep[i].loc[input_features['Start training']:input_features['End training']]],axis=1
+            if sm.tsa.stattools.grangercausalitytests(pd.concat([customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']], cus_rep[i].loc[customer.start_training:customer.end_training]],axis=1
                                                                 ), maxlag=1, verbose=False)[1][0]["ssr_ftest"][1] >= 0.05:
                 cus_rep.drop(i,axis=1,inplace=True)   
                 corr.drop(i,inplace=True) 
@@ -780,18 +801,16 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
 
     customer.forecaster = ForecasterAutoreg(
             regressor = input_features['regressor'],  
-            lags      = input_features['Window size']     
+            lags      = customer.window_size     
         )
 
-    customer.forecaster.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
-                            exog = customers_proxy.loc[input_features['Start training']:input_features['End training']])
-
-    check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
+    customer.forecaster.fit(y    = customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']],
+                            exog = customers_proxy.loc[customer.start_training:customer.end_training])
     
-    new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
+    new_index = generate_index_for_predicted_values(customer, input_features)
 
     customer.predictions_exog_proxy = customer.forecaster.predict(steps = len(new_index),
-                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):customer.last_observed_window],
                                                        exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
     
 
@@ -839,7 +858,6 @@ def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: D
 
     return predictions_prallel
 
-
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meter as a exogenous variables
 # # This function works on a data with two types, i.e., reposit and smart meters together
@@ -853,7 +871,6 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
                                      non_participants:  Union[List[Union[int,str]], None] = None,
                                      number_of_proxy_customers: Union[int, None] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
-        
     # create a dictionary of customers with the participant nmi as keys.
     customers_partipant = {i: copy.deepcopy(customers[i]) for i in participants}
 
@@ -882,15 +899,20 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
         customers_partipant[i].data = pd.concat([customers_partipant[i].data,temp], axis=1)
 
     # update the inpute feature parameter, so that it matches the dates for the non-participant customers.
-    input_features['End training'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-    input_features['Last-observed-window'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-    input_features['Windows to be forecasted'] = (end_participants_date - end_non_participants_date).days + input_features['Windows to be forecasted']
+    for i in customers_non_participant:
+        customers_non_participant[i].end_training = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
+        customers_non_participant[i].last_observed_window = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # input_features['End training'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
+    # input_features['Last-observed-window'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
+    input_features['days to be forecasted'] = (end_participants_date - end_non_participants_date).days + input_features['days to be forecasted']
 
     if number_of_proxy_customers is None:
         number_of_proxy_customers = min(10,len(participants))
 
     # generate forecate for non-participant customers.
     non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+    # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_list_comprehension(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
 
     return participants_pred, non_participants_pred
 
@@ -927,7 +949,7 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
 
     customer.forecaster_xgboost_proxy = ForecasterAutoreg(
             regressor = xgboost.XGBRegressor(),  
-            lags      = input_features['Window size']     
+            lags      = input_features['window size']     
         )
 
     customer.forecaster_xgboost_proxy.fit(y    = customer.data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
@@ -938,7 +960,7 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
     new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
 
     customer.predictions_xgboost_exog_proxy = customer.forecaster_xgboost_proxy.predict(steps = len(new_index),
-                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
                                                        exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
     
     result = generate_output_adjusted_format_for_predictions(customer.predictions_xgboost_exog_proxy, customer, input_features)
@@ -967,7 +989,7 @@ def forecast_pointbased_exog_reposit_time_xgboost_multiple_nodes(hist_data_proxy
 def forecast_multiseries_recusrive_autoregresive(n_customers,input_features):
     forecaster_ms = ForecasterAutoregMultiSeries(
                     regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()), # or use "regressor = HistGradientBoostingRegressor(random_state=123)," if the training set is big (n_sample >10000)
-                    lags               = input_features['Window size'],
+                    lags               = input_features['window size'],
                     transformer_series = sklearn.preprocessing.StandardScaler(),
                 )
     
@@ -977,7 +999,7 @@ def forecast_multiseries_recusrive_autoregresive(n_customers,input_features):
 
     new_index = generate_index_for_predicted_values(time_zone_info, input_features, n_customers[list(n_customers.keys())[0]].data.index[1] - n_customers[list(n_customers.keys())[0]].data.index[0])
     pred_ = forecaster_ms.predict(steps=len(new_index),
-                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
+                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
                                 ).set_index(new_index).rename_axis('datetime')
 
     return pd.melt(pred_.reset_index(),  id_vars='datetime' ,var_name='nmi', value_name='value').set_index(['nmi', 'datetime'])
@@ -994,14 +1016,14 @@ def forecast_multivariate_recusrive_autoregresive_single_node(n_customers,custom
     forecaster = ForecasterAutoregMultiVariate(
                     regressor          = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), sklearn.linear_model.Ridge()),
                     level              = customer.nmi,
-                    lags               = input_features['Window size'],
+                    lags               = input_features['window size'],
                     steps              = len(new_index)
                 )
 
     forecaster.fit(series=pd.DataFrame({i: n_customers[i].data.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']] for i in n_customers.keys()}))
     
     result = forecaster.predict(steps=len(new_index),
-                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
+                                last_window = pd.DataFrame({i: n_customers[i].data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']] for i in n_customers.keys()})
                                 ).set_index(new_index).rename_axis('datetime')
 
     result.rename(columns={customer.nmi: input_features['Forecasted_param']}, inplace = True)
@@ -1060,7 +1082,7 @@ def forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers: Dict[
     datetimes = customer.data.index
     proxy_meas_repo = [ hist_data_proxy_customers[i].data[input_features['Forecasted_param']][
             (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])).strftime('%Y-%m-%d %H:%M:%S'):
-            (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')] for i in hist_data_proxy_customers.keys()]
+            (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['days to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')] for i in hist_data_proxy_customers.keys()]
 
     proxy_meas_repo_ = np.transpose(np.array(proxy_meas_repo))
 
@@ -1114,7 +1136,7 @@ def pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers: D
     for i in hist_data_proxy_customers.keys():
         df = copy.deepcopy(hist_data_proxy_customers[i].data[input_features['Forecasted_param']][
             (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])).strftime('%Y-%m-%d %H:%M:%S'):
-            (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')]) 
+            (datetime.datetime.strptime(input_features['Last-observed-window'],'%Y-%m-%d %H:%M:%S') + (datetimes[1]-datetimes[0])+ datetime.timedelta(days=input_features['days to be forecasted'])).strftime('%Y-%m-%d %H:%M:%S')]) 
         proxy_set_repo.append(df[(df.index.hour == time_hms.hour) & (df.index.minute == time_hms.minute) & (df.index.second == time_hms.second)])
 
     proxy_set_repo_ = np.transpose(np.array(proxy_set_repo))
@@ -1166,7 +1188,7 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 
 #         forecaster = ForecasterAutoreg(
 #                 regressor = input_features['regressor'],  
-#                 lags      = input_features['Window size']      
+#                 lags      = input_features['window size']      
 #             )
         
 #         forecaster.fit(y = y_input.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']],
@@ -1176,8 +1198,8 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 
 #         forecaster = tsprial.forecasting.ForecastingChain(
 #         estimator = input_features['regressor'],
-#         n_estimators = input_features['Window size'],
-#         lags = range(1,input_features['Window size']+1),
+#         n_estimators = input_features['window size'],
+#         lags = range(1,input_features['window size']+1),
 #         use_exog = input_features['exog'],
 #         accept_nan = False
 #                             )
@@ -1188,8 +1210,8 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 #         forecaster = tsprial.forecasting.ForecastingRectified(
 #                     estimator = input_features['regressor'],
 #                     n_estimators = 200,
-#                     test_size = input_features['Window size']* input_features['Windows to be forecasted'],
-#                     lags = range(1,input_features['Window size']+1),
+#                     test_size = input_features['window size']* input_features['days to be forecasted'],
+#                     lags = range(1,input_features['window size']+1),
 #                     use_exog = input_features['exog']
 #                                         )
 #         forecaster.fit(exog, y_input.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
@@ -1198,8 +1220,8 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 
 #         forecaster = tsprial.forecasting.ForecastingStacked(
 #                             input_features['regressor'],
-#                             test_size = input_features['Window size']* input_features['Windows to be forecasted'],
-#                             lags = range(1,input_features['Window size']+1),
+#                             test_size = input_features['window size']* input_features['days to be forecasted'],
+#                             lags = range(1,input_features['window size']+1),
 #                             use_exog = input_features['exog']
 #                                                 )
 #         forecaster.fit(exog, y_input.loc[input_features['Start training']:input_features['End training']][input_features['Forecasted_param']])
@@ -1219,7 +1241,7 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 #         if input_features['algorithm'] == 'iterated':
 
 #             return ( forecaster.predict(steps = len(new_index ),
-#                                                         last_window = y_input[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['Windows to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
+#                                                         last_window = y_input[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days to be forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['Last-observed-window']],
 #                                                         exog = exog_f).to_frame().set_index(new_index )
 #                         )
 #         else:
@@ -1250,13 +1272,13 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 #     if data_tzinfo == True:
 #         return pd.date_range(
 #             start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
-#             end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
+#             end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['days to be forecasted']),
 #             freq=input_features['data_freq'],
 #             tz="Australia/Sydney").delete(-1)
 #     else:
 #         return pd.date_range(
 #             start=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime,
-#             end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['Windows to be forecasted']),
+#             end=datetime.datetime.strptime(input_features['Last-observed-window'],"%Y-%m-%d %H:%M:%S") + deltatime + datetime.timedelta(days=input_features['days to be forecasted']),
 #             freq=input_features['data_freq']).delete(-1)
 
 # def generate_output_adjusted_format_for_predictions_1(result: pd.DataFrame, nmi_input, input_features: Dict) -> pd.DataFrame:
