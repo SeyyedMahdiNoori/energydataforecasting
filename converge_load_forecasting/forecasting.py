@@ -74,9 +74,14 @@ def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, custom
     result.rename(columns={'pred': input_features['Forecasted_param']}, inplace = True)
     nmi = [customer.nmi] * len(result)
     result['nmi'] = nmi
-    result.reset_index(inplace=True)
-    result.rename(columns={'index': 'datetime'}, inplace = True)
-    result.set_index(['nmi', 'datetime'], inplace=True)
+    result.rename_axis('datetime',inplace = True)
+    result.set_index('nmi',append = True,inplace=True)
+    result = result.swaplevel()
+
+    # result.swaplevel().sort_index(inplace=True)
+    # result.reset_index(inplace=True)
+    # result.rename(columns={'index': 'datetime'}, inplace = True)
+    # result.set_index(['nmi', 'datetime'], inplace=True)
 
     return result
 
@@ -171,12 +176,17 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
 
     # days to be forecasted
     if input_features['days_to_be_forecasted'] is None:
+        
         if len(input_features['date_to_be_forecasted']) == 10:
-            days_to_be_forecasted = max ( (datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
-                                    ).days, 1) 
+            delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
         else:
-            days_to_be_forecasted = max( (datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d %H:%M:%S') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
-                                    ).days + 1, 1)
+            delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d %H:%M:%S') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
+        
+        if delta.seconds > 0:
+            days_to_be_forecasted = max ( delta.days + 1, 1) 
+        else:
+            days_to_be_forecasted = max ( delta.days, 1)        
+    
     else:
         days_to_be_forecasted = input_features['days_to_be_forecasted'] 
 
@@ -234,7 +244,7 @@ class Customers:
 
             self.forecaster = tsprial.forecasting.ForecastingChain(
             estimator = input_features['regressor'],
-            n_estimators = 200,
+            n_estimators =  self.window_size,
             lags = range(1,self.window_size+1),
             use_exog = input_features['exog'],
             accept_nan = False
@@ -243,10 +253,16 @@ class Customers:
             self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
         elif input_features['algorithm'] == 'rectified':
+            
+            if len(self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']]) - int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * self.days_to_be_forecasted - self.window_size <= 1:
+                test_size = None
+            else:
+                test_size = int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * self.days_to_be_forecasted
+
             self.forecaster = tsprial.forecasting.ForecastingRectified(
                         estimator = input_features['regressor'],
-                        n_estimators = 200,
-                        test_size = int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * input_features['days_to_be_forecasted'],
+                        n_estimators = self.window_size,
+                        test_size = test_size,
                         lags = range(1, self.window_size + 1),
                         use_exog = input_features['exog']
                                             )
@@ -254,9 +270,14 @@ class Customers:
 
         elif input_features['algorithm'] == 'stacking':
 
+            if len(self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']]) - int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * self.days_to_be_forecasted - self.window_size <= 1:
+                test_size = None
+            else:
+                test_size = int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * self.days_to_be_forecasted
+
             self.forecaster = tsprial.forecasting.ForecastingStacked(
                                 input_features['regressor'],
-                                test_size = int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * input_features['days_to_be_forecasted'],
+                                test_size = test_size,
                                 lags = range(1, self.window_size + 1),
                                 use_exog = input_features['exog']
                                                     )
@@ -331,7 +352,7 @@ class Customers:
                         steps       =  self.window_size,
                         metric      = 'mean_absolute_error',
                         # refit       = False,
-                        initial_train_size = len(self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']]) - int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * input_features['days_to_be_forecasted'],
+                        initial_train_size = len(self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']]) - int( (24* 60) / int(self.data.index.inferred_freq[:-1]) ) * self.days_to_be_forecasted,
                         # fixed_train_size   = False,
                         return_best = True,
                         verbose     = False
