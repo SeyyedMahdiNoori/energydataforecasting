@@ -16,11 +16,11 @@ customersdatapath = './NextGen_example.csv'
 data_initialised = initialise(customersdatapath = customersdatapath,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
-                              Last_observed_window='2018-12-29',
+                              last_observed_window='2018-12-29',
                               regressor_input = 'LinearRegression',
                               algorithm = 'iterated',
                               exog = False,
-                              windows_to_be_forecasted=1)
+                              days_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
 nmi = data_initialised.customers_nmi[10]
@@ -42,7 +42,7 @@ hist_data_proxy_customers = {i: data_initialised.customers[data_initialised.cust
 # #     Time series plot
 # # ===================================
 fig, ax = plt.subplots(figsize=(12, 4.5))
-data_initialised.customers[nmi].data.loc[data_initialised.input_features['Start training']:data_initialised.input_features['End training']][data_initialised.input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
+data_initialised.customers[nmi].data.loc[data_initialised.input_features['start_training']:data_initialised.input_features['end_training']][data_initialised.input_features['Forecasted_param']].plot(ax=ax, label='train', linewidth=1)
 plt.xlabel("Date")
 plt.ylabel("Active Power (Watt)")
 ax.set_title('Behind the meter measurement')
@@ -111,14 +111,14 @@ plt.show()
 # #     Autocorrelation plot
 # # ===================================
 fig, ax = plt.subplots(figsize=(7, 3))
-plot_acf(data_initialised.customers[nmi].data[data_initialised.input_features['Forecasted_param']], ax=ax, lags=data_initialised.input_features['Window size'])
+plot_acf(data_initialised.customers[nmi].data[data_initialised.input_features['Forecasted_param']], ax=ax, lags=data_initialised.input_features['window_size'])
 plt.show()
 
 # # ===================================
 # #     Partial autocorrelation plot
 # # ===================================
 fig, ax = plt.subplots(figsize=(9, 4.5))
-plot_pacf(data_initialised.customers[nmi].data[data_initialised.input_features['Forecasted_param']], ax=ax, lags=data_initialised.input_features['Window size'])
+plot_pacf(data_initialised.customers[nmi].data[data_initialised.input_features['Forecasted_param']], ax=ax, lags=data_initialised.input_features['window_size'])
 plt.xlabel("Lages")
 plt.ylabel("PACF")
 # ax.set_title('')

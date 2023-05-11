@@ -28,19 +28,20 @@ customersdatapath = './NextGen_example.csv'
 data_initialised = initialise(customersdatapath = customersdatapath,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
-                              Last_observed_window='2018-12-29',
+                              last_observed_window='2018-12-29',
                               regressor_input = 'LinearRegression',
                               algorithm = 'iterated',
                               loss_function= 'ridge',
                               exog = False,
-                              windows_to_be_forecasted=1)
+                              days_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
 nmi = data_initialised.customers_nmi[10]
 customer = {i: data_initialised.customers[nmi] for i in [nmi]}
 
 # n number of customers (here arbitrarily 5 is chosen) to be forecasted parallely
-n_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(data_initialised.customers_nmi), size=5, replace=False)}
+# n_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(data_initialised.customers_nmi), size=5, replace=False)}
+n_customers = {i: data_initialised.customers[i] for i in data_initialised.customers_nmi[0:10]}
 
 # n number of customers (here arbitrarily 5 is chosen) with know real-time values
 hist_data_proxy_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(data_initialised.customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
