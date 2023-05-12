@@ -78,11 +78,6 @@ def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, custom
     result.set_index('nmi',append = True,inplace=True)
     result = result.swaplevel()
 
-    # result.swaplevel().sort_index(inplace=True)
-    # result.reset_index(inplace=True)
-    # result.rename(columns={'index': 'datetime'}, inplace = True)
-    # result.set_index(['nmi', 'datetime'], inplace=True)
-
     return result
 
 def select_regressor(regressor_input: str, loss_function: Union[sklearn.pipeline.Pipeline, None] = None) -> sklearn.pipeline.Pipeline:
@@ -446,7 +441,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         if customersdatapath is not None:
             data: pd.DataFrame = pd.read_csv(customersdatapath)     
         elif raw_data is not None:
-            data = copy.deepcopy(raw_data)
+            data = raw_data
         elif db_url is not None and db_table_names is not None:
             sql = [f"SELECT * from {table}" for table in db_table_names]
             data = cx.read_sql(db_url,sql)
@@ -718,7 +713,7 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None:
     if input_features['exog'] == True:
         customer.exog = encoding_cyclical_time_features(customer.data.loc[customer.start_training:customer.end_training].index)
         customer.exog_f = encoding_cyclical_time_features(customer.new_index)
-        customer.f_steps = copy.deepcopy(customer.exog_f)
+        customer.f_steps = customer.exog_f
     else:
         customer.exog = None
         customer.exog_f = None
@@ -767,7 +762,8 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features)
 
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
-    
+    predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
+
     return predictions_prallel
 
 
@@ -775,7 +771,10 @@ def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers]
 
     preds = [run_forecast_pointbased_single_node(customers[i],input_features) for i in customers.keys()]
 
-    return pd.concat(preds, axis=0)
+    preds = pd.concat(preds, axis=0)
+    preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
+    
+    return preds
 
 # # ================================================================
 # # Recursive multi-step probabilistic forecasting method
@@ -827,24 +826,36 @@ def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Custom
 
 def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: int):
     
-    cus_rep = pd.concat([pd.DataFrame(hist_data_proxy_customers[i].data[input_features['Forecasted_param']]).rename(columns={input_features['Forecasted_param']: i}) for i in hist_data_proxy_customers.keys()],axis=1)
-    
+    if int(customer.data.index.freqstr[:-1]) == int(hist_data_proxy_customers[list(hist_data_proxy_customers.keys())[0]].data.index.freqstr[:-1]):
+        cus_rep = pd.concat([pd.DataFrame(hist_data_proxy_customers[i].data['added']).rename(columns={'added': i}) for i in hist_data_proxy_customers.keys()],axis=1)
+    elif int(customer.data.index.freqstr[:-1]) > int(hist_data_proxy_customers[list(hist_data_proxy_customers.keys())[0]].data.index.freqstr[:-1]):
+        cus_rep = pd.concat([pd.DataFrame(hist_data_proxy_customers[i].data['added'].resample(customer.data.index.freqstr).mean()).rename(columns={'added': i}) for i in hist_data_proxy_customers.keys()],axis=1)
+    else:
+        cus_rep = pd.concat([pd.DataFrame(hist_data_proxy_customers[i].data['added'].resample(customer.data.index.freqstr).pad()).rename(columns={'added': i}) for i in hist_data_proxy_customers.keys()],axis=1)
+
+    cus_rep = pd.concat([pd.DataFrame(customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']]),cus_rep],axis=1)
+    cus_rep = cus_rep.fillna(0)
+    cus_rep.drop(input_features['Forecasted_param'],axis=1,inplace=True)
+
     corr = cus_rep.loc[customer.start_training:customer.end_training].corrwith(customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']])
+    corr = corr.fillna(0)
     corr.sort_values(ascending=False,inplace=True)
 
     corr = corr.head(min(3*number_of_proxy_customers,len(hist_data_proxy_customers.keys())))
     cus_rep = cus_rep[corr.to_dict()]
 
-    try:
-        for i in cus_rep.columns:
+    for i in cus_rep.columns:
+        try:
             if sm.tsa.stattools.grangercausalitytests(pd.concat([customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']], cus_rep[i].loc[customer.start_training:customer.end_training]],axis=1
                                                                 ), maxlag=1, verbose=False)[1][0]["ssr_ftest"][1] >= 0.05:
                 cus_rep.drop(i,axis=1,inplace=True)   
                 corr.drop(i,inplace=True) 
 
-    except InfeasibleTestError:
-        print(f'Warning: {customer.nmi} has values that are constant, or they follow an strange pattern that grangercausalitytests cannot be done on them!')
-        sm.tools.sm_exceptions
+        except InfeasibleTestError:
+            cus_rep.drop(i,axis=1,inplace=True)   
+            corr.drop(i,inplace=True)
+        # print(f'Warning: {customer.nmi} has values that are constant, or they follow an strange pattern that grangercausalitytests cannot be done on them!')
+        # sm.tools.sm_exceptions
 
     corr = corr.head(min(number_of_proxy_customers,len(cus_rep.columns)))
     cus_rep = cus_rep[corr.to_dict()]
@@ -872,23 +883,35 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
         number_of_proxy_customers = min(10,len(hist_data_proxy_customers.keys()))
 
     customers_proxy = check_corr_cause_proxy_customer(hist_data_proxy_customers, customer, input_features, number_of_proxy_customers)
+    
+    customer.new_index = generate_index_for_predicted_values(customer, input_features)
+    
+    if len(customers_proxy.columns) == 0:
+        
+        input_features['algorithm'] = 'rectified'
+        customer.exog = None
+        customer.exog_f = None
+        customer.f_steps = np.arange(len(customer.new_index))
+        
+        customer.generator_forecaster_object(input_features)
+        customer.generate_prediction(input_features)
+        result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
 
-    customer.forecaster = ForecasterAutoreg(
+    else:
+        
+        customer.forecaster = ForecasterAutoreg(
             regressor = input_features['regressor'],  
             lags      = customer.window_size     
         )
 
-    customer.forecaster.fit(y    = customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']],
+        customer.forecaster.fit(y    = customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']],
                             exog = customers_proxy.loc[customer.start_training:customer.end_training])
-    
-    new_index = generate_index_for_predicted_values(customer, input_features)
 
-    customer.predictions_exog_proxy = customer.forecaster.predict(steps = len(new_index),
-                                                       last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days_to_be_forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):customer.last_observed_window],
-                                                       exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
-    
-
-    result = generate_output_adjusted_format_for_predictions(customer.predictions_exog_proxy, customer, input_features)
+        customer.predictions_exog_proxy = customer.forecaster.predict(steps = len(customer.new_index),                                                                     
+                                                        last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=customer.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):customer.last_observed_window],
+                                                        exog = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]] ).to_frame().set_index(customer.new_index)
+        
+        result = generate_output_adjusted_format_for_predictions(customer.predictions_exog_proxy, customer, input_features)
 
     return result
 
@@ -940,53 +963,49 @@ def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: D
 def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers], 
                                      participants: List[Union[int,str]], 
                                      input_features: Dict,
-                                     end_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None, 
+                                     end_participation_date: Union[datetime.datetime, pd.Timestamp, None] = None, 
                                      end_non_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None,                                 
                                      non_participants:  Union[List[Union[int,str]], None] = None,
                                      number_of_proxy_customers: Union[int, None] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
-    # create a dictionary of customers with the participant nmi as keys.
-    customers_partipant = {i: copy.deepcopy(customers[i]) for i in participants}
-
+    
     # if the non-participants are not mentioned. All the customers that are not participating are considered as non-participant.
     if non_participants is None:
         non_participants = [i for i in customers.keys() if i not in participants]
 
-    # if end_participants_date is not given, the last non-Nan value of the the first participant customer is used as the end_participants_date.
-    if end_participants_date is None:
-        end_participants_date = customers[participants[0]].data[input_features['Forecasted_param']].last_valid_index() 
-
-    # if end_non_participants_date is not given, the last non-Nan value of the the first non-participant customer is used as the end_participants_date. 
-    if end_non_participants_date is None:
-        end_non_participants_date = customers[non_participants[0]].data[input_features['Forecasted_param']].last_valid_index()    
-
+    # create a dictionary of customers with the participant nmi as keys.
+    customers_partipant = {i: customers[i] for i in participants}    
+    
     # create a dictionary of customers with the non-participant nmi as keys.
     customers_non_participant = {i: customers[i] for i in non_participants}
-
+    
     # generate forecate for participant customers.
     participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features)
     
     # combine forecast and historical data for participant customers.
     for i in participants_pred.index.levels[0]:
-        temp = pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]])
-        customers_partipant[i].data.drop(input_features['Forecasted_param'], axis=1, inplace = True)
-        customers_partipant[i].data = pd.concat([customers_partipant[i].data,temp], axis=1)
+
+        temp = pd.DataFrame(pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]]))
+        customers_partipant[i].data = pd.concat([customers_partipant[i].data,
+                                                 temp.rename(columns={input_features['Forecasted_param']: 'added'})], axis=1)
 
     # update the inpute feature parameter, so that it matches the dates for the non-participant customers.
-    for i in customers_non_participant:
-        customers_non_participant[i].end_training = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-        customers_non_participant[i].last_observed_window = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-    
-    # input_features['end_training'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-    # input_features['last_observed_window'] = end_non_participants_date.strftime('%Y-%m-%d %H:%M:%S')
-    input_features['days_to_be_forecasted'] = (end_participants_date - end_non_participants_date).days + input_features['days_to_be_forecasted']
+    if end_non_participants_date is not None:
+        
+        input_features['end_training'] = end_non_participants_date
+        input_features['last_observed_window'] = end_non_participants_date
+
+        for i in customers_non_participant:
+            [customers_non_participant[i].start_training, customers_non_participant[i].end_training,
+            customers_non_participant[i].last_observed_window, customers_non_participant[i].window_size,
+            customers_non_participant[i].data, customers_non_participant[i].data_freq, customers_non_participant[i].days_to_be_forecasted] = fill_input_dates_per_customer(customers_non_participant[i].data,input_features)
 
     if number_of_proxy_customers is None:
         number_of_proxy_customers = min(10,len(participants))
 
     # generate forecate for non-participant customers.
-    non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
-    # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_list_comprehension(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+    # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+    non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_list_comprehension(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
 
     return participants_pred, non_participants_pred
 
