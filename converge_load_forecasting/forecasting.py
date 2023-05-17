@@ -190,6 +190,9 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
     else:
         steps_to_be_forecasted = math.ceil( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
 
+    if steps_to_be_forecasted < 0:
+        steps_to_be_forecasted = math.ceil( ( 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
+        
     # data frequency
     data_freq = data.index.inferred_freq
 
