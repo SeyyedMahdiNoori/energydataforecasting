@@ -427,7 +427,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
                   core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
-                exog: Union[bool, None] = None, algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
+                exog: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None ) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
@@ -655,6 +655,14 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             input_features['algorithm'] = algorithm
         else:
             print(f"Error! {algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified'.")
+            sys.exit(1) 
+
+        if run_sequentially is None or run_sequentially == False:
+            input_features['mac_user'] = False
+        elif run_sequentially == True:
+            input_features['mac_user'] = True
+        else:
+            print(f"Error! {run_sequentially} is NOT valid. It should be either True or False")
             sys.exit(1) 
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
@@ -988,8 +996,11 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     customers_non_participant = {i: customers[i] for i in non_participants}
     
     # generate forecate for participant customers.
-    participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features)
-    
+    if input_features['mac_user'] == True:
+        participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features)
+    else:
+        participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features)
+
     # combine forecast and historical data for participant customers.
     for i in participants_pred.index.levels[0]:
 
@@ -1028,7 +1039,10 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
 
     # generate forecate for non-participant customers.
     # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
-    non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+    if input_features['mac_user'] == True:
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+    else:
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
 
     return participants_pred, non_participants_pred
 
