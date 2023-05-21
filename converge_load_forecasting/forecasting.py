@@ -216,8 +216,7 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
     data_freq = data.index.inferred_freq
 
     if start_training > end_training  or last_observed_window < end_training :
-            print('Error!!! Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
-            sys.exit(1)
+            raise ValueError('Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
 
@@ -490,16 +489,14 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             data = cx.read_sql(db_url,sql)
             data.sort_values(by='datetime',inplace=True)
         else:
-            print('Error!!! Either customersdatapath, raw_data or db_url needs to be provided')
-            sys.exit(1)
+            raise ValueError('Either customersdatapath, raw_data or db_url needs to be provided')
             
         # # ###### Pre-process the data ######
         # format datetime to pandas datetime format
         try:
             check_time_zone = has_timezone(data.datetime[0])
         except AttributeError:
-            print('Error!!! Input data is not the correct format! It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
-            sys.exit(1)
+            raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
 
         try:
             if check_time_zone == False:
@@ -507,8 +504,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             else:
                 data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
         except ParserError:
-            print('Error!!! data.datetime should be a string that can be meaningfully changed to time.')
-            sys.exit(1)
+            raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
 
         # # Add weekday column to the data
         # data['DayofWeek'] = data['datetime'].dt.day_name()
@@ -533,8 +529,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         elif forecasted_param in data.columns:
             input_features['Forecasted_param'] = forecasted_param
         else:
-            print('forecasted_param is not in the data')
-            sys.exit(1)
+            raise ValueError('forecasted_param is not in the data')
 
         # The datetime index that training starts from
         if start_training is None:
@@ -544,18 +539,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 datetime.datetime.strptime(start_training,'%Y-%m-%d')
                 input_features['start_training'] = start_training + ' ' + '00:00:00'
             except ValueError:
-                print(f"Error!!!{start_training} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{start_training} is NOT a valid date string.")
         elif len(start_training) == 19:
             try:
                 datetime.datetime.strptime(start_training,'%Y-%m-%d %H:%M:%S')
                 input_features['start_training'] = start_training
             except ValueError:
-                print(f"Error!!!{start_training} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{start_training} is NOT a valid date string.")
         else:
-            print('Error!!! start_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-            sys.exit(1)
+            raise ValueError('start_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
 
         # The last datetime index used for trainning.
         if end_training is None:
@@ -565,18 +557,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 datetime.datetime.strptime(end_training,'%Y-%m-%d')
                 input_features['end_training'] = end_training + ' ' + '00:00:00'
             except ValueError:
-                print(f"Error! {end_training} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{end_training} is NOT a valid date string.")
         elif len(end_training) == 19:
             try:
                 datetime.datetime.strptime(end_training,'%Y-%m-%d %H:%M:%S')
                 input_features['end_training'] = end_training
             except ValueError:
-                print(f"Error! {end_training} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{end_training} is NOT a valid date string.")
         else:
-            print('Error!!! end_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-            sys.exit(1)
+            raise ValueError('end_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
 
         # The last obersved window. The forecasting values are generated after this time index.
         if last_observed_window is None:
@@ -586,18 +575,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 datetime.datetime.strptime(last_observed_window,'%Y-%m-%d')
                 input_features['last_observed_window'] = last_observed_window + ' ' + '00:00:00'
             except ValueError:
-                print(f"Error! {last_observed_window} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{last_observed_window} is NOT a valid date string.")
         elif len(last_observed_window) == 19:
             try:
                 datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
                 input_features['last_observed_window'] = last_observed_window
             except ValueError:
-                print(f"Error! {last_observed_window} is NOT a valid date string.")
-                sys.exit(1)
+                raise ValueError(f"{last_observed_window} is NOT a valid date string.")
         else:
-            print('Error!!! last_observed_window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-            sys.exit(1)
+            raise ValueError('last_observed_window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
 
         # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
         # For example, for a data with resolution 30th minutely, the window size woul be 48.
@@ -606,13 +592,11 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         elif type(window_size)==int:
             input_features['window_size'] = window_size
         else:
-            print('window size should be an integer')
-            sys.exit(1)
+            raise ValueError('window size should be an integer')
 
         # The number of days to be forecasted.
         if days_to_be_forecasted is not None and date_to_be_forecasted is not None:
-            print('Only of the days_to_be_forecasted or date_to_be_forecasted should be given')
-            sys.exit(1)
+            raise ValueError('Only of the days_to_be_forecasted or date_to_be_forecasted should be given')
 
         elif days_to_be_forecasted is None and date_to_be_forecasted is None:     
             input_features['days_to_be_forecasted'] = 1
@@ -629,22 +613,18 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                     datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d')
                     input_features['date_to_be_forecasted'] = date_to_be_forecasted
                 except ValueError:
-                    print(f"Error! {date_to_be_forecasted} is NOT a valid date string.")
-                    sys.exit(1)
+                    raise ValueError(f"{date_to_be_forecasted} is NOT a valid date string.")
             elif len(date_to_be_forecasted) == 19:
                 try:
                     datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d %H:%M:%S')
                     input_features['date_to_be_forecasted'] = date_to_be_forecasted
                 except ValueError:
-                    print(f"Error! {date_to_be_forecasted} is NOT a valid date string.")
-                    sys.exit(1)
+                    raise ValueError(f"{date_to_be_forecasted} is NOT a valid date string.")
             else:
-                print('Error!!! date_to_be_forecasted does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" ')
-                sys.exit(1)
+                raise ValueError('date_to_be_forecasted does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" ')
 
         else:
-            print('date_to_be_forecasted should be a str or days_to_be_forecasted should be an int')
-            sys.exit(1)
+            raise ValueError('date_to_be_forecasted should be a str or days_to_be_forecasted should be an int')
 
         # number of processes parallel programming.
         if core_usage is None:
@@ -652,8 +632,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         elif type(core_usage) == int:
             input_features['core_usage'] = core_usage
         else:
-            print('Core usage should be an integer')
-            sys.exit(1)
+            raise TypeError('Core usage should be an integer')
 
         if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
             print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
@@ -663,16 +642,14 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         elif regressor_input == 'LinearRegression' or regressor_input == 'XGBoost' or regressor_input == 'RandomForest':
             pass
         else:
-            print(f"Error! {regressor_input} is NOT a valid regressor. The regressor_input should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
-            sys.exit(1)
+            raise ValueError(f"{regressor_input} is NOT a valid regressor. The regressor_input should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
         
         if loss_function is None:
             loss_function = 'ridge'
         elif loss_function == 'ridge' or loss_function == 'lasso' or loss_function == 'MSE':
             pass
         else:
-            print(f"Error! {loss_function} is NOT a valid loss function. The loss_function should be 'ridge' or 'lasso' or 'MSE'.")
-            sys.exit(1)
+            raise ValueError(f"{loss_function} is NOT a valid loss function. The loss_function should be 'ridge' or 'lasso' or 'MSE'.")
 
         input_features['regressor'] = select_regressor(regressor_input,select_loss_function(loss_function))
 
@@ -681,24 +658,21 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         elif exog == True:
             input_features['exog'] = exog
         else:
-            print(f"Error! {exog} is NOT valid. It should be True or False.")
-            sys.exit(1) 
+            raise TypeError(f"{exog} is NOT valid. It should be True or False.")
 
         if algorithm is None:
             input_features['algorithm'] = 'iterated'
         elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking':
             input_features['algorithm'] = algorithm
         else:
-            print(f"Error! {algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified'.")
-            sys.exit(1) 
+            raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified'.")
 
         if run_sequentially is None or run_sequentially == False:
             input_features['mac_user'] = False
         elif run_sequentially == True:
             input_features['mac_user'] = True
         else:
-            print(f"Error! {run_sequentially} is NOT valid. It should be either True or False")
-            sys.exit(1) 
+            raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
