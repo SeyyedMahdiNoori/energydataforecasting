@@ -267,7 +267,7 @@ class Customers:
         to the self customer instance.
         '''
 
-        if input_features['algorithm'] == 'iterated':
+        if input_features['algorithm'] == 'iterated' and input_features['probabilistic_algorithm'] == 'bootstrap':
 
             self.forecaster = ForecasterAutoreg(
                     regressor = input_features['regressor'],  
@@ -276,6 +276,17 @@ class Customers:
             
             self.forecaster.fit(y = self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']],
                                 exog = self.exog)
+        
+        elif input_features['algorithm'] == 'iterated':
+
+            self.forecaster = tsprial.forecasting.ForecastingCascade(
+            estimator = input_features['regressor'],
+            lags = range(1,self.window_size+1),
+            use_exog = input_features['exog'],
+            accept_nan = False
+                                )
+            
+            self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])            
 
         elif input_features['algorithm'] == 'direct':
 
@@ -331,7 +342,7 @@ class Customers:
         # generate datetime index for the predicted values based on the window size and the last obeserved window.
         # new_index = generate_index_for_predicted_values(self.check_time_zone_class, input_features, self.data.index[1] - self.data.index[0])
 
-        if input_features['algorithm'] == 'iterated':
+        if input_features['algorithm'] == 'iterated' and input_features['probabilistic_algorithm'] == 'bootstrap':
 
             self.predictions = self.forecaster.predict(steps = len(self.new_index),
                                                         # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=self.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
@@ -351,7 +362,7 @@ class Customers:
         """  
 
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        if input_features['algorithm'] == 'iterated':
+        if input_features['algorithm'] == 'iterated' and input_features['probabilistic_algorithm'] == 'bootstrap':
             self.interval_predictions = self.forecaster.predict_interval(steps=len(self.new_index),
                                                                         interval = [10, 90],
                                                                         n_boot = 400,
@@ -359,7 +370,6 @@ class Customers:
                                                                         exog = self.exog_f
                                                                         ).set_index(self.new_index)
         else:
-
             model = mapie.regression.MapieRegressor(self.forecaster, cv="prefit")
             model.fit(self.exog,self.data[input_features['Forecasted_param']].loc[self.exog.index])
             model.single_estimator_ = self.forecaster
@@ -471,8 +481,8 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
-                  core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
-                exog: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None ) -> Union[Initialise_output,None]: 
+                core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
+                exog: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
@@ -684,6 +694,16 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             input_features['mac_user'] = True
         else:
             raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
+
+        if probabilistic_algorithm is None:
+            if input_features['algorithm'] == 'iterated':
+                input_features['probabilistic_algorithm'] = 'bootstrap'
+            else:
+                input_features['probabilistic_algorithm'] = 'jackknife'
+        elif probabilistic_algorithm == 'bootstrap' or probabilistic_algorithm == 'jackknife':
+            input_features['probabilistic_algorithm'] = probabilistic_algorithm
+        else:
+            raise TypeError(f"{probabilistic_algorithm} is NOT valid. It should be 'bootstrap'  or 'jackknife' or left blank.")
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
