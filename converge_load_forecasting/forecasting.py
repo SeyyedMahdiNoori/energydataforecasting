@@ -29,6 +29,7 @@ import xgboost
 import sys
 import os
 import math
+import mapie
 
 # Warnings configuration
 # ==============================================================================
@@ -333,9 +334,9 @@ class Customers:
 
         if input_features['algorithm'] == 'iterated':
 
-            self.predictions = self.forecaster.predict(steps = len(self.new_index ),
+            self.predictions = self.forecaster.predict(steps = len(self.new_index),
                                                         # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=self.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
-                                                        exog = self.exog_f).to_frame().set_index(self.new_index )
+                                                        exog = self.exog_f).to_frame().set_index(self.new_index)
 
         else:
 
@@ -351,12 +352,22 @@ class Customers:
         """  
 
         # [10 90] considers 80% (90-10) confidence interval ------- n_boot: Number of bootstrapping iterations used to estimate prediction intervals.
-        self.interval_predictions = self.forecaster.predict_interval(steps=len(self.new_index),
+        if input_features['algorithm'] == 'iterated':
+            self.interval_predictions = self.forecaster.predict_interval(steps=len(self.new_index),
                                                                         interval = [10, 90],
-                                                                        n_boot = 1000,
+                                                                        n_boot = 400,
                                                                         # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days_to_be_forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
                                                                         exog = self.exog_f
                                                                         ).set_index(self.new_index)
+        else:
+
+            model = mapie.regression.MapieRegressor(self.forecaster, cv="prefit")
+            model.fit(self.exog,self.data[input_features['Forecasted_param']].loc[self.exog.index])
+            model.single_estimator_ = self.forecaster
+            pred, bounds = model.predict(self.exog_f, alpha=0.2)
+            bounds = bounds.reshape(len(pred),2)
+
+            self.interval_predictions = pd.DataFrame({'pred': pred, 'lower_bound': bounds[:,0], 'upper_bound': bounds[:,1]}, index=self.exog_f.index)
 
     def generate_optimised_forecaster_object(self,input_features):            
         """
@@ -844,6 +855,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     print("Customer nmi: {nmi}, {precent}% completed".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100)))
     
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
+    input_features['exog'] = True
     add_exog_for_forecasting(customer, input_features)
     
     # Train a forecasting object
@@ -856,7 +868,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
     """
     forecast_inetervalbased_multiple_nodes(customers_nmi,input_features)
 
@@ -870,6 +882,15 @@ def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Custom
 
     return predictions_prallel
 
+
+def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+
+    preds = [forecast_inetervalbased_single_node(customers[i],input_features) for i in customers.keys()]
+
+    preds = pd.concat(preds, axis=0)
+    preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
+    
+    return preds
 
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meter as a exogenous variables

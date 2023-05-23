@@ -7,7 +7,7 @@ with open("README.md" , "r")as fh:
 
 setup(
     name='converge-load-forecasting',
-    version='0.0.5',
+    version='0.1.0',
     author='Seyyed Mahdi Noori Rahim Abadi, Dan Gordon',
     author_email='mahdi.noori@anu.edu.au',
     long_description=long_description,
@@ -17,6 +17,7 @@ setup(
         'connectorx',
         'python-dateutil',
         'datetime',
+        'mapie',
         'matplotlib',
         'more_itertools',
         'multiprocess',
