@@ -233,7 +233,7 @@ class Customers:
     def __init__(self, nmi, data, input_features):
 
         self.nmi = nmi      # store nmi in each object              
-        
+
         # initialse each customer based on the user preferences and the input data
         [self.start_training, self.end_training,
           self.last_observed_window, self.window_size,
@@ -282,7 +282,7 @@ class Customers:
             self.forecaster = tsprial.forecasting.ForecastingCascade(
             estimator = input_features['regressor'],
             lags = range(1,self.window_size+1),
-            use_exog = input_features['exog'],
+            use_exog = input_features['time_proxy'],
             accept_nan = False
                                 )
             
@@ -294,7 +294,7 @@ class Customers:
             estimator = input_features['regressor'],
             n_estimators =  self.window_size,
             lags = range(1,self.window_size+1),
-            use_exog = input_features['exog'],
+            use_exog = input_features['time_proxy'],
             accept_nan = False
                                 )
             
@@ -312,7 +312,7 @@ class Customers:
                         n_estimators = self.window_size,
                         test_size = test_size,
                         lags = range(1, self.window_size + 1),
-                        use_exog = input_features['exog']
+                        use_exog = input_features['time_proxy']
                                             )
             self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
@@ -327,7 +327,7 @@ class Customers:
                                 input_features['regressor'],
                                 test_size = test_size,
                                 lags = range(1, self.window_size + 1),
-                                use_exog = input_features['exog']
+                                use_exog = input_features['time_proxy']
                                                     )
             self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
@@ -482,7 +482,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
-                exog: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
+                time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
@@ -674,12 +674,12 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         input_features['regressor'] = select_regressor(regressor_input,select_loss_function(loss_function))
 
-        if exog is None or exog == False:
-            input_features['exog'] = False
-        elif exog == True:
-            input_features['exog'] = exog
+        if time_proxy is None or time_proxy == False:
+            input_features['time_proxy'] = False
+        elif time_proxy == True:
+            input_features['time_proxy'] = time_proxy
         else:
-            raise TypeError(f"{exog} is NOT valid. It should be True or False.")
+            raise TypeError(f"{time_proxy} is NOT valid. It should be True or False.")
 
         if algorithm is None:
             input_features['algorithm'] = 'iterated'
@@ -763,7 +763,7 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None:
     
     customer.new_index = generate_index_for_predicted_values(customer, input_features)
 
-    if input_features['exog'] == True:
+    if input_features['time_proxy'] == True:
         customer.exog = encoding_cyclical_time_features(customer.data.loc[customer.start_training:customer.end_training].index)
         customer.exog_f = encoding_cyclical_time_features(customer.new_index)
         customer.f_steps = customer.exog_f
@@ -855,7 +855,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     print("Customer nmi: {nmi}, {precent}% completed".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100)))
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
-    input_features['exog'] = True
+    input_features['time_proxy'] = True
     add_exog_for_forecasting(customer, input_features)
     
     # Train a forecasting object
@@ -970,42 +970,29 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
 
     customers_proxy = check_corr_cause_proxy_customer(hist_data_proxy_customers, customer, input_features, number_of_proxy_customers)
     
-    customer.new_index = generate_index_for_predicted_values(customer, input_features)
-    
-    if input_features['probabilistic_algorithm'] is None:
-        input_features['probabilistic_algorithm'] = 'bootstrap'
+    add_exog_for_forecasting(customer,input_features)
 
-    if len(customers_proxy.columns) == 0:
-        
+    if customer.exog is None and len(customers_proxy.columns) == 0:
         input_features['algorithm'] = 'rectified'
-        customer.exog = None
-        customer.exog_f = None
-        customer.f_steps = np.arange(len(customer.new_index))
-        
-        customer.generator_forecaster_object(input_features)
-        customer.generate_prediction(input_features)
-        result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
+    
+    if customer.exog is None and len(customers_proxy.columns) != 0:
+        customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
+        customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+    elif len(customers_proxy.columns) != 0 and customer.exog is not None:
+        customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
+        customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
 
-    else:
-        
-        customer.forecaster = ForecasterAutoreg(
-            regressor = input_features['regressor'],  
-            lags      = customer.window_size     
-        )
-
-        customer.forecaster.fit(y    = customer.data.loc[customer.start_training:customer.end_training][input_features['Forecasted_param']],
-                            exog = customers_proxy.loc[customer.start_training:customer.end_training])
-
-        customer.predictions_exog_proxy = customer.forecaster.predict(steps = len(customer.new_index),                                                                     
-                                                        # last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=customer.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):customer.last_observed_window],
-                                                        exog = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]] ).to_frame().set_index(customer.new_index)
-        
-        result = generate_output_adjusted_format_for_predictions(customer.predictions_exog_proxy, customer, input_features)
+    customer.generator_forecaster_object(input_features)
+    customer.generate_prediction(input_features)
+    result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
 
     return result
 
 
 def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], n_customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+
+    if input_features['probabilistic_algorithm'] is None:
+        input_features['probabilistic_algorithm'] = 'bootstrap'
 
     preds = [forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,n_customers[i],input_features, number_of_proxy_customers) for i in n_customers.keys()]
 
@@ -1037,6 +1024,9 @@ def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_cus
     It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
     of input preferences generated by the initilase function.
     """
+
+    if input_features['probabilistic_algorithm'] is None:
+        input_features['probabilistic_algorithm'] = 'bootstrap'
 
     predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers)
  
