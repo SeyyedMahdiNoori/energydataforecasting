@@ -24,6 +24,7 @@ from dateutil.parser import parse
 from dateutil.parser import ParserError
 from typing import Union, Dict, Tuple, List
 import statsmodels.api as sm
+import pytz
 from statsmodels.tools.sm_exceptions import InfeasibleTestError
 import xgboost
 import sys
@@ -482,7 +483,8 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
-                time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None) -> Union[Initialise_output,None]: 
+                time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
+                time_zone: Union[str, None] = None ) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
@@ -519,11 +521,23 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         except AttributeError:
             raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
 
+        # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
+        # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
+        # defeault values will be used to fill in the gap. 
+        input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
+
+        if time_zone is None:
+            input_features['time_zone'] = 'Australia/Sydney'
+        elif time_zone not in pytz.all_timezones:
+            raise ValueError(f"{time_zone} is NOT a valid time zone. only timezone that are in pytz.all_timezones are accpeted.")
+        else:
+            input_features['time_zone'] = time_zone
+
         try:
             if check_time_zone == False:
                 data['datetime'] = pd.to_datetime(data['datetime'])
             else:
-                data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert("Australia/Sydney")
+                data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
         except ParserError:
             raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
 
@@ -538,11 +552,6 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # save unique dates of the data
         datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
-
-        # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
-        # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
-        # defeault values will be used to fill in the gap. 
-        input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
 
         # The parameters to be forecasted. It should be a column name in the input data.
         if forecasted_param is None:
@@ -740,10 +749,10 @@ def generate_index_for_predicted_values(customer: Customers, input_features: Dic
     deltatime = customer.data.index[1]-customer.data.index[0]
     if customer.check_time_zone_class == True:
         return pd.date_range(
-            start=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime,
-            end=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime + deltatime * customer.steps_to_be_forecasted,
+            start = datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime,
+            end = datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime + deltatime * customer.steps_to_be_forecasted,
             freq = customer.data_freq,
-            tz="Australia/Sydney").delete(-1)
+            tz = input_features['time_zone']).delete(-1)
     else:
         return pd.date_range(
             start=datetime.datetime.strptime(customer.last_observed_window,"%Y-%m-%d %H:%M:%S") + deltatime,
@@ -973,18 +982,49 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     add_exog_for_forecasting(customer,input_features)
 
     if customer.exog is None and len(customers_proxy.columns) == 0:
-        input_features['algorithm'] = 'rectified'
-    
-    if customer.exog is None and len(customers_proxy.columns) != 0:
-        customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
-        customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
-    elif len(customers_proxy.columns) != 0 and customer.exog is not None:
-        customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
-        customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+        
+        try:
+            input_features['algorithm'] = 'rectified'
 
-    customer.generator_forecaster_object(input_features)
-    customer.generate_prediction(input_features)
-    result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
+            if customer.exog is None and len(customers_proxy.columns) != 0:
+                customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
+                customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+            elif len(customers_proxy.columns) != 0 and customer.exog is not None:
+                customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
+                customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+
+            customer.generator_forecaster_object(input_features)
+            customer.generate_prediction(input_features)
+            result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
+
+        except Exception:
+            input_features['algorithm'] = 'iterated'
+
+            if customer.exog is None and len(customers_proxy.columns) != 0:
+                customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
+                customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+            elif len(customers_proxy.columns) != 0 and customer.exog is not None:
+                customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
+                customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+
+            customer.generator_forecaster_object(input_features)
+            customer.generate_prediction(input_features)
+            result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)            
+
+    else:
+        
+        input_features['algorithm'] = 'iterated'
+    
+        if customer.exog is None and len(customers_proxy.columns) != 0:
+            customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
+            customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+        elif len(customers_proxy.columns) != 0 and customer.exog is not None:
+            customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
+            customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+
+        customer.generator_forecaster_object(input_features)
+        customer.generate_prediction(input_features)
+        result = generate_output_adjusted_format_for_predictions(customer.predictions, customer, input_features)
 
     return result
 
