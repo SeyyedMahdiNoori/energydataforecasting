@@ -23,6 +23,7 @@ setup(
         'multiprocess',
         'pandas',
         'pyomo',
+        'pytz',
         'skforecast==0.7.0',
         'sklearn',
         'statsmodels',
