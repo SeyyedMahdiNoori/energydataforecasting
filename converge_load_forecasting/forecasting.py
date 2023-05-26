@@ -1,4 +1,6 @@
 import pandas as pd
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import copy
 import sklearn
@@ -28,7 +30,6 @@ import pytz
 from statsmodels.tools.sm_exceptions import InfeasibleTestError
 import xgboost
 import sys
-import os
 import math
 import mapie
 
@@ -989,9 +990,11 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
             if customer.exog is None and len(customers_proxy.columns) != 0:
                 customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
                 customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+                customer.f_steps = customer.exog_f
             elif len(customers_proxy.columns) != 0 and customer.exog is not None:
                 customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
                 customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+                customer.f_steps = customer.exog_f
 
             customer.generator_forecaster_object(input_features)
             customer.generate_prediction(input_features)
@@ -1003,9 +1006,11 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
             if customer.exog is None and len(customers_proxy.columns) != 0:
                 customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
                 customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+                customer.f_steps = customer.exog_f
             elif len(customers_proxy.columns) != 0 and customer.exog is not None:
                 customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
                 customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+                customer.f_steps = customer.exog_f
 
             customer.generator_forecaster_object(input_features)
             customer.generate_prediction(input_features)
@@ -1018,9 +1023,11 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
         if customer.exog is None and len(customers_proxy.columns) != 0:
             customer.exog = customers_proxy.loc[customer.start_training:customer.end_training]
             customer.exog_f = customers_proxy.loc[customer.new_index[0]:customer.new_index[-1]]
+            customer.f_steps = customer.exog_f
         elif len(customers_proxy.columns) != 0 and customer.exog is not None:
             customer.exog = pd.concat([customer.exog,customers_proxy.loc[customer.exog.index]], axis = 1)
             customer.exog_f = pd.concat([customer.exog_f,customers_proxy.loc[customer.exog_f.index]], axis = 1)
+            customer.f_steps = customer.exog_f
 
         customer.generator_forecaster_object(input_features)
         customer.generate_prediction(input_features)
