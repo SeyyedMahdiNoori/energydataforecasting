@@ -27,6 +27,7 @@ setup(
         'skforecast==0.7.0',
         'sklearn',
         'statsmodels',
+        'threadpoolctl',
         'tqdm',
         'tspiral',
         'xgboost'
