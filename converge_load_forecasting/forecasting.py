@@ -66,7 +66,7 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
     # Add cyclical time featurs to the dataframe
     exog_time['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
     exog_time['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-    # exog_time['weekday'] = (time_series_data_index.day_of_week > 4).astype(int)
+    # exog_time['weekday'] = (time_series_data_index.day_of_week > 4).astype(int)     # ** Temporary ** Experiments have shown that if the training set is too small, weekday information has a negative impact on the accuracy of the forecast.
     exog_time.drop('datetime', axis=1, inplace=True)
 
     return exog_time
@@ -107,21 +107,20 @@ def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, custom
 
     return result
 
-def select_regressor(regressor_input: str, loss_function: Union[sklearn.pipeline.Pipeline, None] = None) -> sklearn.pipeline.Pipeline:
+def select_regressor(regressor: str, loss_function: Union[sklearn.pipeline.Pipeline, None] = None) -> sklearn.pipeline.Pipeline:
     '''
-    select_regressor(regressor_input: str, loss_function: Union[sklearn.pipeline.Pipeline, None] = None) -> sklearn.pipeline.Pipeline
+    select_regressor(regressor: str, loss_function: Union[sklearn.pipeline.Pipeline, None] = None) -> sklearn.pipeline.Pipeline
     Select the regressor based on the user input
     '''
 
     if loss_function is None:
         loss_function = sklearn.linear_model.Ridge()
 
-    if regressor_input == 'LinearRegression':
+    if regressor == 'LinearRegression':
         regressor = sklearn.pipeline.make_pipeline(sklearn.preprocessing.StandardScaler(), loss_function)
-    elif regressor_input == 'XGBoost':
-        regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor())
-        # regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor(eval_metric = sklearn.metrics.mean_absolute_error))
-    elif regressor_input == 'RandomForest':
+    elif regressor == 'XGBoost':
+        regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor()) # More specific objective functions: regressor = sklearn.pipeline.make_pipeline(xgboost.XGBRegressor(eval_metric = sklearn.metrics.mean_absolute_error))
+    elif regressor == 'RandomForest':
         regressor = sklearn.pipeline.make_pipeline(RandomForestRegressor(random_state=123))
 
     return regressor
@@ -541,7 +540,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
-                core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor_input: Union[str, None] = None, loss_function: Union[str, None] = None,
+                core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None, loss_function: Union[str, None] = None,
                 time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
                 time_zone: Union[str, None] = None ) -> Union[Initialise_output,None]: 
     '''
@@ -614,7 +613,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # read and process weather data if it has been inputted
         if weatherdatapath is None and raw_weather_data is None:
-            data_weather = None
+            data_weather: Union[pd.DataFrame, None] = None
         elif weatherdatapath is not None:
             raw_weather_data = pd.read_csv(weatherdatapath)
             data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features)
@@ -735,12 +734,12 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
             print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
 
-        if regressor_input is None:
-            regressor_input = 'LinearRegression'
-        elif regressor_input == 'LinearRegression' or regressor_input == 'XGBoost' or regressor_input == 'RandomForest':
+        if regressor is None:
+            regressor = 'LinearRegression'
+        elif regressor == 'LinearRegression' or regressor == 'XGBoost' or regressor == 'RandomForest':
             pass
         else:
-            raise ValueError(f"{regressor_input} is NOT a valid regressor. The regressor_input should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
+            raise ValueError(f"{regressor} is NOT a valid regressor. The regressor should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
         
         if loss_function is None:
             loss_function = 'ridge'
@@ -749,7 +748,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         else:
             raise ValueError(f"{loss_function} is NOT a valid loss function. The loss_function should be 'ridge' or 'lasso' or 'MSE'.")
 
-        input_features['regressor'] = select_regressor(regressor_input,select_loss_function(loss_function))
+        input_features['regressor'] = select_regressor(regressor,select_loss_function(loss_function))
 
         if time_proxy is None or time_proxy == False:
             input_features['time_proxy'] = False
@@ -797,9 +796,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
 
-def pool_executor_parallel(function_name, repeat_iter, input_features,data_weather = None):
+def pool_executor_parallel(function_name, repeat_iter, input_features,data_weather: Union[pd.DataFrame, None] = None):
     '''
-    pool_executor_parallel(function_name,repeat_iter,input_features,data_weather = None)
+    pool_executor_parallel(function_name,repeat_iter,input_features,data_weather: Union[pd.DataFrame, None] = None)
     
     This function is used to parallelised the forecasting for each nmi
     '''
@@ -832,7 +831,7 @@ def generate_index_for_predicted_values(customer: Customers, input_features: Dic
 # # Autoregressive recursive multi-step point-forecasting method
 # # ================================================================
 
-def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_weather = None) -> None:
+def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> None:
     '''
     add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None
     This function generates cyclical time features for the class Customers to be used as an exogenous variable in the prediction algorithms or adds None in the class Customers
@@ -851,16 +850,16 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_wea
         customer.f_steps = np.arange(len(customer.new_index))
 
     if data_weather is not None and customer.exog is not None:
-        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1)
-        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.data.loc[customer.new_index[0]:customer.new_index[-1]].index,data_weather)], axis = 1)
+        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1).fillna(0)
+        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.new_index,data_weather)], axis = 1).fillna(0)
         customer.f_steps = customer.exog_f
     elif data_weather is not None:
-        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)
-        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather)
+        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather).fillna(0)
+        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather).fillna(0)
         customer.f_steps = customer.exog_f
 
 # This function outputs the forecasting for each nmi
-def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather = None) -> pd.DataFrame:
+def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_single_node(customers_nmi,input_features)
 
@@ -885,7 +884,7 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather = None) -> pd.DataFrame:
+def forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
@@ -893,7 +892,7 @@ def forecast_pointbased_single_node(customer: Customers, input_features: Dict, d
     return run_forecast_pointbased_single_node(customer, input_features, data_weather)
 
 
-def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather = None) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
@@ -913,7 +912,7 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     return predictions_prallel
 
 
-def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather = None) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
@@ -930,7 +929,7 @@ def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers]
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
-def forecast_inetervalbased_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
+def forecast_inetervalbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_inetervalbased_single_node(customers_nmi,input_features)
 
@@ -942,7 +941,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
     input_features['time_proxy'] = True
-    add_exog_for_forecasting(customer, input_features)
+    add_exog_for_forecasting(customer, input_features, data_weather)
     
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
@@ -954,7 +953,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_inetervalbased_multiple_nodes(customers_nmi,input_features)
 
@@ -966,17 +965,17 @@ def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,st
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'jackknife'
 
-    predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features)
+    predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features, data_weather)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     return predictions_prallel
 
-def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'jackknife'
 
-    preds = [forecast_inetervalbased_single_node(customers[i],input_features) for i in customers.keys()]
+    preds = [forecast_inetervalbased_single_node(customers[i], input_features, data_weather) for i in customers.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -1034,7 +1033,7 @@ def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,s
 
     return cus_rep
 
-def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
     """
     forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame
 
@@ -1056,7 +1055,7 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
 
     customers_proxy = check_corr_cause_proxy_customer(hist_data_proxy_customers, customer, input_features, number_of_proxy_customers)
     
-    add_exog_for_forecasting(customer,input_features)
+    add_exog_for_forecasting(customer,input_features, data_weather)
 
     if customer.exog is None and len(customers_proxy.columns) == 0:
         
@@ -1112,18 +1111,18 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     return result
 
 
-def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], n_customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], n_customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    preds = [forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,n_customers[i],input_features, number_of_proxy_customers) for i in n_customers.keys()]
+    preds = [forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,n_customers[i],input_features, number_of_proxy_customers,data_weather) for i in n_customers.keys()]
 
     return pd.concat(preds, axis=0)
 
 
 
-def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat_iter, input_features, number_of_proxy_customers):
+def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat_iter, input_features, number_of_proxy_customers,data_weather):
     '''
     pool_executor_parallel(function_name,repeat_iter,input_features)
     
@@ -1131,7 +1130,7 @@ def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat
     '''
 
     with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,itertools.repeat(hist_data_proxy_customers),repeat_iter,itertools.repeat(input_features),itertools.repeat(number_of_proxy_customers)))  
+        results = list(executor.map(function_name,itertools.repeat(hist_data_proxy_customers),repeat_iter,itertools.repeat(input_features),itertools.repeat(number_of_proxy_customers),itertools.repeat(data_weather)))  
     return results
 
     # with ThreadPoolExecutor(max_workers=input_features['core_usage']) as executor:
@@ -1139,7 +1138,7 @@ def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat
     # return results
 
 
-def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
     """
     forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_nmi,input_features)
 
@@ -1151,7 +1150,7 @@ def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_cus
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers)
+    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers,data_weather)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -1168,7 +1167,9 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
                                      end_participation_date: Union[datetime.datetime, pd.Timestamp, None] = None, 
                                      end_non_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None,                                 
                                      non_participants:  Union[List[Union[int,str]], None] = None,
-                                     number_of_proxy_customers: Union[int, None] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                                     number_of_proxy_customers: Union[int, None] = None,
+                                     data_weather: Union[pd.DataFrame, None] = None
+                                     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     
     '''
     forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers], 
@@ -1228,9 +1229,9 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
 
     # generate forecate for participant customers.
     if input_features['mac_user'] == True:
-        participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features)
+        participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_weather)
     else:
-        participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features)
+        participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_weather)
 
     # combine forecast and historical data for participant customers.
     for i in participants_pred.index.levels[0]:
@@ -1279,78 +1280,12 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     # generate forecate for non-participant customers.
     # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
     if input_features['mac_user'] == True:
-        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
     else:
-        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
 
     return participants_pred, non_participants_pred
 
-
-
-# # ================================================================
-# # Load_forecasting Using linear regression of Reposit data and time as a exogenous variables
-# # ================================================================
-def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
-    """
-    forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer,input_features)
-
-    This function generates forecasting values for a customer at using the some customers real-time measurements as proxies for a target customer.
-    It uses the same the sk-forecast built in function that allows to use exogenous variables when forecasting a target customer. 
-    More about this function can be found in "https://joaquinamatrodrigo.github.io/skforecast/0.4.3/notebooks/autoregresive-forecaster-exogenous.html".
-
-    It requires three inputs. The first input is a dictionry of known customers with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. 
-    The second input is the target customer instance generated by the initilase function.
-    And, the third input is the input_features which is a dictionary of input preferences generated by the initilase function.
-    """    
-    
-    # print(customer's nmi)
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
-
-    if number_of_proxy_customers is None:
-        number_of_proxy_customers = min(10,len(hist_data_proxy_customers.keys()))
-
-    customers_proxy = check_corr_cause_proxy_customer(hist_data_proxy_customers, customer, input_features, number_of_proxy_customers)
-
-    # exog_time = pd.DataFrame({'datetime': customers_proxy.index})
-    # exog_time = exog_time.set_index(customers_proxy.index)
-    # customers_proxy['minute_sin'] = np.sin(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-    # customers_proxy['minute_cos'] = np.cos(2 * np.pi * (exog_time.datetime.dt.hour*60 + exog_time.datetime.dt.minute) / 1440)
-
-    with threadpool_limits(limits=1, user_api='blas'):
-        customer.forecaster_xgboost_proxy = ForecasterAutoreg(
-                regressor = xgboost.XGBRegressor(),  
-                lags      = input_features['window_size']     
-            )
-
-        customer.forecaster_xgboost_proxy.fit(y    = customer.data.loc[input_features['start_training']:input_features['end_training']][input_features['Forecasted_param']],
-                                exog = customers_proxy.loc[input_features['start_training']:input_features['end_training']])
-
-        check_time_zone_ = has_timezone(customer.data[input_features['Forecasted_param']].index[0])
-        
-        new_index = generate_index_for_predicted_values(check_time_zone_, input_features, customer.data.index[1]-customer.data.index[0])
-
-        customer.predictions_xgboost_exog_proxy = customer.forecaster_xgboost_proxy.predict(steps = len(new_index),
-                                                        #    last_window = customer.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(input_features['last_observed_window'],"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days_to_be_forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):input_features['last_observed_window']],
-                                                        exog = customers_proxy.loc[new_index[0]:new_index[-1]] ).to_frame().set_index(new_index)
-    
-    result = generate_output_adjusted_format_for_predictions(customer.predictions_xgboost_exog_proxy, customer, input_features)
-
-    return result
-
-def forecast_pointbased_exog_reposit_time_xgboost_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame:
-    """
-    forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
-
-    This function generates forecasting values multiple customer using the autoregressive recursive multi-step forecasting method.
-    It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
-    of input preferences generated by the initilase function.
-    """
-
-    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_time_xgboost_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers)
- 
-    predictions_prallel = pd.concat(predictions_prallel, axis=0)
-
-    return predictions_prallel
 
 # # ================================================================
 # # Load_forecasting Using multi-series approach (multivariate and non-multivariate)
@@ -1422,8 +1357,6 @@ def forecast_multivariate_recusrive_autoregresive_multiple_nodes(customers: Dict
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
     return predictions_prallel
-
-
 
 # # ================================================================
 # # Load_forecasting Using linear regression of Reposit data and smart meters
