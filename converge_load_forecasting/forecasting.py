@@ -71,6 +71,17 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
 
     return exog_time
 
+def add_weather_data_to_customers(time_series_data_index, data_weather):
+
+    if int(data_weather.index.freqstr[:-1]) ==  int(time_series_data_index.freqstr[:-1]):
+        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]]
+    elif int(data_weather.index.freqstr[:-1]) <  int(time_series_data_index.freqstr[:-1]):
+        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).mean()
+    else:
+        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).pad()
+
+    return exog_weather
+
 def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, customer, input_features: Dict) -> pd.DataFrame:
     '''
     generate_output_adjusted_format_for_predictions(result: pd.DataFrame, customer, input_features: Dict) -> pd.DataFrame
@@ -221,6 +232,50 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
             raise ValueError('Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
+
+def weather_input_data_cleaner(raw_weather_data, input_features):
+            
+    raw_weather_data.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    
+    try:
+        raw_weather_data = raw_weather_data.drop('PeriodEnd', axis=1)
+    except:
+        pass
+
+    try:
+        raw_weather_data = raw_weather_data.drop('Period', axis=1)
+    except:
+        pass
+    
+
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(raw_weather_data.datetime[0])
+    except AttributeError:
+        raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+
+    try:
+        
+        if check_time_zone == False:
+            raw_weather_data['datetime'] = pd.to_datetime(raw_weather_data['datetime'])
+        else:
+            raw_weather_data['datetime'] = pd.to_datetime(raw_weather_data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+
+    except ParserError:
+        raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
+
+    raw_weather_data.set_index('datetime', inplace=True)
+
+    raw_weather_data['Temp_EWMA'] = raw_weather_data.AirTemp.ewm(com=0.5).mean()        
+    
+    raw_weather_data = raw_weather_data[~raw_weather_data.index.duplicated(keep='first')]
+
+    raw_weather_data = fill_in_missing_data(raw_weather_data)
+
+    return raw_weather_data
+
+
 
 # # ================================================================
 # # Generate a class where its instances are the customers' nmi
@@ -463,11 +518,12 @@ class Customers:
         self.data['demand_disagg'] = D
 
 class Initialise_output:
-            def __init__(self, customers, input_features, customers_nmi, datetimes) -> None:
+            def __init__(self, customers, input_features, customers_nmi, datetimes, data_weather) -> None:
                 self.customers = customers
                 self.input_features = input_features
                 self.customers_nmi = customers_nmi
                 self.datetimes = datetimes
+                self.data_weather = data_weather
 
 # class Initialise_output:
 #             def __init__(self, data, customers, input_features, customers_nmi, datetimes) -> None:
@@ -538,7 +594,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         try:
             if check_time_zone == False:
-                data['datetime'] = pd.to_datetime(data['datetime'])
+                data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_localize('Australia/Sydney')
             else:
                 data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
         except ParserError:
@@ -555,6 +611,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # save unique dates of the data
         datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
+
+        # read and process weather data if it has been inputted
+        if weatherdatapath is None and raw_weather_data is None:
+            data_weather = None
+        elif weatherdatapath is not None:
+            raw_weather_data = pd.read_csv(weatherdatapath)
+            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features)
+        else:
+            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features)
 
         # The parameters to be forecasted. It should be a column name in the input data.
         if forecasted_param is None:
@@ -718,7 +783,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
 
         # data_initialised = Initialise_output(data, customers, input_features, customers_nmi, datetimes)
-        data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes)
+        data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes, data_weather)
         
         return data_initialised
 
@@ -732,15 +797,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
 
-def pool_executor_parallel(function_name, repeat_iter, input_features):
+def pool_executor_parallel(function_name, repeat_iter, input_features,data_weather = None):
     '''
-    pool_executor_parallel(function_name,repeat_iter,input_features)
+    pool_executor_parallel(function_name,repeat_iter,input_features,data_weather = None)
     
     This function is used to parallelised the forecasting for each nmi
     '''
     
     with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,repeat_iter,itertools.repeat(input_features)))  
+        results = list(executor.map(function_name,repeat_iter,itertools.repeat(input_features),itertools.repeat(data_weather))) 
     return results
 
 
@@ -767,7 +832,7 @@ def generate_index_for_predicted_values(customer: Customers, input_features: Dic
 # # Autoregressive recursive multi-step point-forecasting method
 # # ================================================================
 
-def add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None:
+def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_weather = None) -> None:
     '''
     add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None
     This function generates cyclical time features for the class Customers to be used as an exogenous variable in the prediction algorithms or adds None in the class Customers
@@ -785,8 +850,17 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None:
         customer.exog_f = None
         customer.f_steps = np.arange(len(customer.new_index))
 
+    if data_weather is not None and customer.exog is not None:
+        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1)
+        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.data.loc[customer.new_index[0]:customer.new_index[-1]].index,data_weather)], axis = 1)
+        customer.f_steps = customer.exog_f
+    elif data_weather is not None:
+        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)
+        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather)
+        customer.f_steps = customer.exog_f
+
 # This function outputs the forecasting for each nmi
-def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
+def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_single_node(customers_nmi,input_features)
 
@@ -795,11 +869,11 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
     of input preferences generated by the initilase function.
     """
 
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100, 1)))
+    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
     # print("{pid}: Customer nmi: {first}, {ts}".format(pid=os.getpid(), first = customer.nmi, ts=datetime.datetime.now()))
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
-    add_exog_for_forecasting(customer, input_features)
+    add_exog_for_forecasting(customer, input_features, data_weather)
 
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
@@ -811,15 +885,15 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_pointbased_single_node(customer: Customers, input_features: Dict) -> pd.DataFrame:
+def forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather = None) -> pd.DataFrame:
     
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
     
-    return run_forecast_pointbased_single_node(customer, input_features)
+    return run_forecast_pointbased_single_node(customer, input_features, data_weather)
 
 
-def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
@@ -831,7 +905,7 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features)
+    predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features, data_weather)
 
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
     predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
@@ -839,12 +913,12 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     return predictions_prallel
 
 
-def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather = None) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    preds = [run_forecast_pointbased_single_node(customers[i],input_features) for i in customers.keys()]
+    preds = [run_forecast_pointbased_single_node(customers[i],input_features,data_weather) for i in customers.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -864,7 +938,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
     It requires two inputs. The first input is the customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
     of input preferences generated by the initilase function.
     """
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100, 1)))
+    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
     input_features['time_proxy'] = True
@@ -975,7 +1049,7 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     
     # print(customer's nmi)
     # print(" Customer nmi: {first}".format(first = customer.nmi))
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100, 1)))
+    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
     if number_of_proxy_customers is None:
         number_of_proxy_customers = min(10,len(hist_data_proxy_customers.keys()))
@@ -1118,7 +1192,40 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     
     # create a dictionary of customers with the non-participant nmi as keys.
     customers_non_participant = {i: customers[i] for i in non_participants}
-    
+
+
+    # update the inpute feature parameter, so that it matches the dates for the participant customers.
+    if end_participation_date is not None:
+
+        if type(end_participation_date) == str:
+            # The datetime index that training starts from
+            if len(end_participation_date) == 10:
+                try:
+                    datetime.datetime.strptime(end_participation_date,'%Y-%m-%d')
+                    input_features['end_training'] = end_participation_date + ' ' + '00:00:00'
+                except ValueError:
+                    raise ValueError(f"{end_participation_date} is NOT a valid date string.")
+            elif len(end_participation_date) == 19:
+                try:
+                    datetime.datetime.strptime(end_participation_date,'%Y-%m-%d %H:%M:%S')
+                    input_features['end_training'] = end_participation_date
+                except ValueError:
+                    raise ValueError(f"{end_participation_date} is NOT a valid date string.")
+            else:
+                raise ValueError('end_participation_date does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+        elif type(end_participation_date) == datetime.datetime:
+            try:
+                input_features['end_training'] = end_non_participants_date.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                input_features['end_training'] = end_non_participants_date.strftime("%Y-%m-%d")
+
+        input_features['last_observed_window'] = input_features['end_training']
+
+        for i in customers_partipant:
+            [customers_partipant[i].start_training, customers_partipant[i].end_training,
+            customers_partipant[i].last_observed_window, customers_partipant[i].window_size,
+            customers_partipant[i].data, customers_partipant[i].data_freq, customers_partipant[i].steps_to_be_forecasted] = fill_input_dates_per_customer(customers_partipant[i].data,input_features)
+
     # generate forecate for participant customers.
     if input_features['mac_user'] == True:
         participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features)
@@ -1129,33 +1236,41 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     for i in participants_pred.index.levels[0]:
 
         temp = pd.DataFrame(pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]]))
+        temp = temp[~temp.index.duplicated(keep='first')]
         customers_partipant[i].data = pd.concat([customers_partipant[i].data,
                                                  temp.rename(columns={input_features['Forecasted_param']: 'added'})], axis=1)
 
     # update the inpute feature parameter, so that it matches the dates for the non-participant customers.
     if end_non_participants_date is not None:
-        
-        input_features['end_training'] = end_non_participants_date
-        input_features['last_observed_window'] = end_non_participants_date
+
+        if type(end_non_participants_date) == str:
+            # The datetime index that training starts from
+            if len(end_non_participants_date) == 10:
+                try:
+                    datetime.datetime.strptime(end_non_participants_date,'%Y-%m-%d')
+                    input_features['end_training'] = end_non_participants_date + ' ' + '00:00:00'
+                except ValueError:
+                    raise ValueError(f"{end_non_participants_date} is NOT a valid date string.")
+            elif len(end_non_participants_date) == 19:
+                try:
+                    datetime.datetime.strptime(end_non_participants_date,'%Y-%m-%d %H:%M:%S')
+                    input_features['end_training'] = end_non_participants_date
+                except ValueError:
+                    raise ValueError(f"{end_non_participants_date} is NOT a valid date string.")
+            else:
+                raise ValueError('end_non_participants_date does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+        elif type(end_non_participants_date) == datetime.datetime:
+            try:
+                input_features['end_training'] = end_non_participants_date.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                input_features['end_training'] = end_non_participants_date.strftime("%Y-%m-%d")
+
+        input_features['last_observed_window'] = input_features['end_training']
 
         for i in customers_non_participant:
             [customers_non_participant[i].start_training, customers_non_participant[i].end_training,
             customers_non_participant[i].last_observed_window, customers_non_participant[i].window_size,
             customers_non_participant[i].data, customers_non_participant[i].data_freq, customers_non_participant[i].steps_to_be_forecasted] = fill_input_dates_per_customer(customers_non_participant[i].data,input_features)
-
-
-
-    # update the inpute feature parameter, so that it matches the dates for the participant customers.
-    if end_participation_date is not None:
-        
-        input_features['end_training'] = end_participation_date
-        input_features['last_observed_window'] = end_participation_date
-
-        for i in customers_partipant:
-            [customers_partipant[i].start_training, customers_partipant[i].end_training,
-            customers_partipant[i].last_observed_window, customers_partipant[i].window_size,
-            customers_partipant[i].data, customers_partipant[i].data_freq, customers_partipant[i].steps_to_be_forecasted] = fill_input_dates_per_customer(customers_partipant[i].data,input_features)
-
 
 
     if number_of_proxy_customers is None:
@@ -1189,7 +1304,7 @@ def forecast_pointbased_exog_reposit_time_xgboost_single_node(hist_data_proxy_cu
     """    
     
     # print(customer's nmi)
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100, 1)))
+    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
     if number_of_proxy_customers is None:
         number_of_proxy_customers = min(10,len(hist_data_proxy_customers.keys()))
@@ -1264,7 +1379,7 @@ def forecast_multiseries_recusrive_autoregresive(n_customers,input_features):
 def forecast_multivariate_recusrive_autoregresive_single_node(n_customers,customer,input_features,number_of_proxy_customers = None):
 
     # print(customer's nmi)
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round(Customers.instances.index(customer.nmi)/len(Customers.instances) * 100, 1)))
+    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
     time_zone_info = has_timezone(customer.data.index[0])
     
