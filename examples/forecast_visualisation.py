@@ -9,17 +9,18 @@ import numpy as np
 from sklearn.metrics import mean_squared_error
 
 
-from converge_load_forecasting import initialise,forecast_pointbased_multiple_nodes,select_regressor,forecast_inetervalbased_multiple_nodes,forecast_lin_reg_proxy_measures_single_node,forecast_pointbased_exog_reposit_single_node
+import converge_load_forecasting as clf 
 
 # # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
-data_initialised = initialise(customersdatapath = customersdatapath,
+
+data_initialised = clf.initialise(customersdatapath = customersdatapath,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
                               last_observed_window='2018-12-29',
-                              regressor_input = 'LinearRegression',
+                              regressor = 'LinearRegression',
                               algorithm = 'iterated',
-                              exog = False,
+                              time_proxy = False,
                               days_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting
@@ -27,10 +28,10 @@ nmi = data_initialised.customers_nmi[10]
 customer = {i: data_initialised.customers[nmi] for i in [nmi]}
 
 # n number of customers (here arbitrarily 5 is chosen) to be forecasted parallely
-n_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(data_initialised.customers_nmi), size=5, replace=False)}
+n_customers = {data_initialised.customers_nmi[i]: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=1).choice(len(data_initialised.customers_nmi), size=5, replace=False)}
 
 # n number of customers (here arbitrarily 5 is chosen) with know real-time values
-hist_data_proxy_customers = {i: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(data_initialised.customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
+hist_data_proxy_customers = {data_initialised.customers_nmi[i]: data_initialised.customers[data_initialised.customers_nmi[i]] for i in np.random.default_rng(seed=3).choice(len(data_initialised.customers_nmi), size=5, replace=False) if i not in n_customers.keys()}
 
 # # ============================================================================
 # # ============================================================================
@@ -131,7 +132,7 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-iterated-LR')
@@ -150,7 +151,7 @@ plt.show()
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
 data_initialised.input_features['exog'] = True
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-iterated-LR-time')
@@ -167,8 +168,8 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-data_initialised.input_features['regressor'] = select_regressor('XGBoost')
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+data_initialised.input_features['regressor'] = clf.select_regressor('XGBoost')
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-iterated-XGBoost')
@@ -185,9 +186,9 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-data_initialised.input_features['regressor'] = select_regressor('LinearRegression')
+data_initialised.input_features['regressor'] = clf.select_regressor('LinearRegression')
 data_initialised.input_features['algorithm'] = 'direct'
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-direct-LR')
@@ -204,9 +205,9 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-data_initialised.input_features['regressor'] = select_regressor('LinearRegression')
+data_initialised.input_features['regressor'] = clf.select_regressor('LinearRegression')
 data_initialised.input_features['algorithm'] = 'rectified'
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-rectified-LR')
@@ -224,9 +225,9 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-data_initialised.input_features['regressor'] = select_regressor('LinearRegression')
+data_initialised.input_features['regressor'] = clf.select_regressor('LinearRegression')
 data_initialised.input_features['algorithm'] = 'stacking'
-prediction = forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 prediction.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='prediction-stacking-LR')
@@ -244,7 +245,7 @@ plt.show()
 
 # generate forecasting values for a specific nmi using a recursive multi-step probabilistic forecasting method
 data_initialised.input_features['algorithm'] = 'iterated'
-prediction = forecast_inetervalbased_multiple_nodes(customer,data_initialised.input_features)
+prediction = clf.forecast_inetervalbased_multiple_nodes(customer,data_initialised.input_features)
 
 import matplotlib.ticker as ticker
 fig, ax = plt.subplots(figsize=(12, 3.5))
@@ -267,7 +268,7 @@ plt.show()
 # # # ================================================================
 # # # Load_forecasting Using linear regression of Reposit data and smart meters
 # # # ================================================================
-res_rep_lin_single_time_single = forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer[nmi],data_initialised.input_features)
+res_rep_lin_single_time_single = clf.forecast_lin_reg_proxy_measures_single_node(hist_data_proxy_customers,customer[nmi],data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
 res_rep_lin_single_time_single.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_single_time')
@@ -280,38 +281,44 @@ plt.ylabel("Active Power (kW)")
 plt.show() 
 
 
-# ###
-# # Note: This approach requires more historical data for training and perform very poorly in cases of low data for training.
-# # Thus, it has not been depicted here.
-# ###
-# # # # ================================================================
-# # # # Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
-# # # # ================================================================
-# # res_rep_lin_multi_time_single = forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer,data_initialised.input_features)    
-
-# # fig, ax = plt.subplots(figsize=(12, 3.5))
-# # res_rep_lin_multi_time_single.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_multi_time')
-# # customer.data[data_initialised.input_features['Forecasted_param']].loc[res_rep_lin_multi_time_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
-# # ax.set_title('Prediction vs real demand')
-# # ax.legend()
-# # plt.xlabel("Time")
-# # plt.ylabel("Active Power (kW)")
-# # plt.ylim((-10, 10))
-# # # plt.savefig('Real_vs_pred.eps', format='eps')
-# # plt.show() 
-
+# # # ##
+# # # Note: This approach requires more historical data for training and perform very poorly in cases of low data for training.
+# # # Thus, it has not been depicted here.
+# ##
 # # # ================================================================
-# # # Load_forecasting Using linear regression of Reposit data and smart meter
+# # # Load_forecasting Using linear regression of Reposit data and smart meter, one for each time-step in a day
 # # # ================================================================
-# res_rep_exog = forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,customer[nmi],data_initialised.input_features)
+# res_rep_lin_multi_time_single = clf.forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customers,customer[nmi],data_initialised.input_features)    
 
 # fig, ax = plt.subplots(figsize=(12, 3.5))
-# res_rep_exog.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_single_time-exogenous')
-# customer[nmi].data[data_initialised.input_features['Forecasted_param']].loc[res_rep_exog.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+# res_rep_lin_multi_time_single.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_multi_time')
+# customer[nmi].data[data_initialised.input_features['Forecasted_param']].loc[res_rep_lin_multi_time_single.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
 # ax.set_title('Prediction vs real demand')
 # ax.legend()
 # plt.xlabel("Time")
 # plt.ylabel("Active Power (kW)")
+# plt.ylim((-10, 10))
 # # plt.savefig('Real_vs_pred.eps', format='eps')
 # plt.show() 
+
+# # ================================================================
+# # Load_forecasting Using linear regression of Reposit data and smart meter
+# # ================================================================
+_ , res_rep_exog = clf.forecast_mixed_type_customers(
+                                    customers = data_initialised.customers,   # customers to be forecasted         
+                                    participants = list(hist_data_proxy_customers.keys()), # list of participant customers' nmi
+                                    non_participants = [nmi],  # list of non-participant customers nmi
+                                    input_features = data_initialised.input_features, # input features generated by the initialise function
+                                    )
+
+
+fig, ax = plt.subplots(figsize=(12, 3.5))
+res_rep_exog.loc[nmi][data_initialised.input_features['Forecasted_param']].plot(ax=ax,linewidth=2,label='repo_single_time-exogenous')
+customer[nmi].data[data_initialised.input_features['Forecasted_param']].loc[res_rep_exog.index.levels[1]].plot(ax=ax, linewidth=2, label='real')
+ax.set_title('Prediction vs real demand')
+ax.legend()
+plt.xlabel("Time")
+plt.ylabel("Active Power (kW)")
+# plt.savefig('Real_vs_pred.eps', format='eps')
+plt.show() 
   

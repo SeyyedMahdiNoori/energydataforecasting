@@ -29,10 +29,10 @@ data_initialised = initialise(customersdatapath = customersdatapath,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
                               last_observed_window='2018-12-29',
-                              regressor_input = 'LinearRegression',
+                              regressor = 'LinearRegression',
                               algorithm = 'iterated',
                               loss_function= 'ridge',
-                              exog = False,
+                              time_proxy = False,
                               days_to_be_forecasted=1)
 
 # An arbitrary customer nmi to be use as target customer for forecasting

@@ -1473,7 +1473,7 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
     """
     
     # generates a pandas datetime index with the same resolution of the original data. The start and end values used in tt are arbitrarily.
-    tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=input_features['data_freq'])[0:-1]
+    tt = pd.date_range(start='2022-01-01',end='2022-01-02',freq=customer.data.index.freqstr)[0:-1]
     pred = pred_each_time_step_repo_linear_reg_single_node(hist_data_proxy_customers,customer,tt[0],input_features)
 
     for t in range(1,len(tt)):
