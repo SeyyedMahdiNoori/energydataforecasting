@@ -17,7 +17,7 @@ from pyomo.opt import SolverFactory
 import tqdm
 from functools import partialmethod
 import itertools
-import connectorx as cx
+# import connectorx as cx
 import tsprial
 import dateutil
 from dateutil.parser import parse
@@ -216,7 +216,12 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
         else:
             delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d %H:%M:%S') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
 
-        steps_to_be_forecasted = math.ceil(delta.total_seconds() / pd.to_timedelta(data.index.freqstr).total_seconds())
+        try:
+            freq_str = pd.to_timedelta(data.index.freqstr)
+        except Exception:
+            freq_str = pd.to_timedelta('1' + data.index.freqstr)
+
+        steps_to_be_forecasted = math.ceil(delta.total_seconds() / freq_str.total_seconds())
     
     else:
         steps_to_be_forecasted = math.ceil( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
@@ -565,10 +570,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             data: pd.DataFrame = pd.read_csv(customersdatapath)     
         elif raw_data is not None:
             data = raw_data
-        elif db_url is not None and db_table_names is not None:
-            sql = [f"SELECT * from {table}" for table in db_table_names]
-            data = cx.read_sql(db_url,sql)
-            data.sort_values(by='datetime',inplace=True)
+        # elif db_url is not None and db_table_names is not None:
+        #     sql = [f"SELECT * from {table}" for table in db_table_names]
+        #     data = cx.read_sql(db_url,sql)
+        #     data.sort_values(by='datetime',inplace=True)
         else:
             raise ValueError('Either customersdatapath, raw_data or db_url needs to be provided')
             
@@ -593,10 +598,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         try:
             if check_time_zone == False:
-                data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_localize('Australia/Sydney')
+                data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_localize('Australia/Sydney', ambiguous='infer')
             else:
                 data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
-        except ParserError:
+        except Exception:
             raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
 
         # # Add weekday column to the data
