@@ -461,7 +461,7 @@ class Customers:
 
         elif input_features['algorithm'] == 'prophet':
 
-            future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = '5T').iloc[-len(self.new_index):]
+            future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
             
             if self.exog_f is not None:
                 exog_f = self.exog_f.reset_index()
@@ -502,7 +502,7 @@ class Customers:
 
             elif input_features['algorithm'] == 'prophet':
 
-                future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = '5T').iloc[-len(self.new_index):]
+                future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
                 
                 if self.exog_f is not None:
                     exog_f = self.exog_f.reset_index()
