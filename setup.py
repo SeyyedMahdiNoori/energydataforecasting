@@ -25,7 +25,7 @@ setup(
         'pyomo',
         'pytz',
         'skforecast==0.7.0',
-        'sklearn',
+        'scikit-learn',
         'statsmodels',
         'threadpoolctl',
         'tqdm',
