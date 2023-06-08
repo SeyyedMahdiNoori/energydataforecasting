@@ -15,7 +15,6 @@ from pyomo.opt import SolverFactory
 import tqdm
 from functools import partialmethod
 import itertools
-import connectorx as cx
 import tsprial
 import dateutil
 from dateutil.parser import parse
