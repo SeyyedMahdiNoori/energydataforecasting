@@ -31,6 +31,7 @@ import sys
 import math
 import mapie
 from threadpoolctl import threadpool_limits
+from prophet import Prophet
 
 # Warnings configuration
 # ==============================================================================
@@ -73,9 +74,29 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
 
 def add_weather_data_to_customers(time_series_data_index, data_weather):
 
-    if int(data_weather.index.freqstr[:-1]) ==  int(time_series_data_index.freqstr[:-1]):
+    try:
+        data_weather_freq_int = int(data_weather.index.freqstr[:-1])
+    except Exception:
+        if data_weather.index.freqstr == 'H':
+            data_weather_freq_int = 60
+        elif data_weather.index.freqstr == 'T':
+            data_weather_freq_int = 1
+        elif data_weather.index.freqstr == 'D':
+            data_weather_freq_int = 1440
+    
+    try:
+       time_series_data_freq_int = int(time_series_data_index.freqstr[:-1])
+    except Exception:
+        if data_weather.index.freqstr == 'H':
+            time_series_data_freq_int = 60
+        elif data_weather.index.freqstr == 'T':
+            time_series_data_freq_int = 1
+        elif data_weather.index.freqstr == 'D':
+            time_series_data_freq_int = 1440
+
+    if data_weather_freq_int ==  time_series_data_freq_int:
         exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]]
-    elif int(data_weather.index.freqstr[:-1]) <  int(time_series_data_index.freqstr[:-1]):
+    elif data_weather_freq_int <  time_series_data_freq_int:
         exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).mean()
     else:
         exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).pad()
@@ -149,13 +170,13 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
     '''
 
     try:
-        if data.index[0:10].inferred_freq is None:
-            if data.index[10:20].inferred_freq is None:
+        if data.index.inferred_freq is None:
+            if data.index[-10:].inferred_freq is None:
                 freq = '5T'
             else:
-                freq = data.index[10:20].inferred_freq
+                freq = data.index[-10:].inferred_freq
         else:
-            freq = data.index[0:10].inferred_freq
+            freq = data.index.inferred_freq
     except Exception:
         freq = '5T'
 
@@ -163,7 +184,7 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
                                    end=data.index[-1],
                                    freq=freq)
     df_new = data.reindex(set_diff)
-    df_new = df_new.fillna(0)
+    df_new = df_new.interpolate(method = 'linear')
 
     return df_new
 
@@ -237,7 +258,7 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
 
-def weather_input_data_cleaner(raw_weather_data, input_features):
+def weather_input_data_cleaner(raw_weather_data, input_features, tzinfo):
             
     raw_weather_data.rename(columns={"PeriodStart": "datetime"},inplace=True)
     
@@ -271,14 +292,27 @@ def weather_input_data_cleaner(raw_weather_data, input_features):
 
     raw_weather_data.set_index('datetime', inplace=True)
 
-    raw_weather_data['Temp_EWMA'] = raw_weather_data.AirTemp.ewm(com=0.5).mean()        
+    if tzinfo is None:
+        raw_weather_data = raw_weather_data.tz_localize(None)
+    else:
+        if check_time_zone == True:
+            raw_weather_data = raw_weather_data.tz_convert(tzinfo)
+        else:
+            raw_weather_data = raw_weather_data.tz_localize(tzinfo)
+
+    try:
+        raw_weather_data['Temp_EWMA'] = raw_weather_data.AirTemp.ewm(com=0.5).mean()
+    except Exception:
+        try:        
+            raw_weather_data['Temp_EWMA'] = raw_weather_data.temp.ewm(com=0.5).mean()
+        except Exception:
+            pass
     
     raw_weather_data = raw_weather_data[~raw_weather_data.index.duplicated(keep='first')]
 
     raw_weather_data = fill_in_missing_data(raw_weather_data)
 
     return raw_weather_data
-
 
 
 # # ================================================================
@@ -392,6 +426,22 @@ class Customers:
                                                         )
                 self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
+            elif input_features['algorithm'] == 'prophet':
+
+                self.forecaster = Prophet()
+
+                if self.data.index.tzinfo is not None:
+                    data_in = pd.DataFrame({'ds': self.data.index.tz_convert(None), 'y':self.data[input_features['Forecasted_param']].values})
+                else:
+                    data_in = pd.DataFrame({'ds': self.data.index, 'y':self.data[input_features['Forecasted_param']].values})
+                
+                if self.exog is not None:
+                    exog = self.exog.reset_index()
+                    exog.drop('index', axis = 1,inplace = True)
+                    data_in = pd.concat([data_in,exog],axis=1)
+
+                self.forecaster.fit(data_in)
+
     def generate_prediction(self, input_features: Dict) -> None:
         """
         generate_prediction(self, input_features: Dict) -> None
@@ -408,6 +458,24 @@ class Customers:
             self.predictions = self.forecaster.predict(steps = len(self.new_index),
                                                         # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=self.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
                                                         exog = self.exog_f).to_frame().set_index(self.new_index)
+
+        elif input_features['algorithm'] == 'prophet':
+
+            future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = '5T').iloc[-len(self.new_index):]
+            
+            if self.exog_f is not None:
+                exog_f = self.exog_f.reset_index()
+                exog_f.drop('index', axis = 1,inplace = True)
+                exog_f.index = future.index
+                future = pd.concat([future,exog_f],axis=1)
+
+            self.predictions = self.forecaster.predict(future)
+            self.predictions = pd.DataFrame({'datetime': self.predictions['ds'] , input_features['Forecasted_param']: self.predictions['yhat']})
+
+            if self.data.index.tzinfo is not None:
+                self.predictions['datetime'] = pd.to_datetime( self.predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+
+            self.predictions = self.predictions.set_index('datetime')
 
         else:
 
@@ -430,7 +498,29 @@ class Customers:
                                                                             # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=input_features['days_to_be_forecasted'])).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
                                                                             exog = self.exog_f
                                                                             ).set_index(self.new_index)
+
+
+            elif input_features['algorithm'] == 'prophet':
+
+                future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = '5T').iloc[-len(self.new_index):]
+                
+                if self.exog_f is not None:
+                    exog_f = self.exog_f.reset_index()
+                    exog_f.drop('index', axis = 1,inplace = True)
+                    exog_f.index = future.index
+                    future = pd.concat([future,exog_f],axis=1)
+
+                self.interval_predictions = self.forecaster.predict(future)
+                self.interval_predictions = pd.DataFrame({'datetime': self.interval_predictions['ds'] , 'pred': self.interval_predictions['yhat'],'upper_bound': self.interval_predictions['yhat_upper'],'lower_bound': self.interval_predictions['yhat_lower'] })
+
+                if self.data.index.tzinfo is not None:
+                    self.interval_predictions['datetime'] = pd.to_datetime( self.interval_predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+
+                self.interval_predictions = self.interval_predictions.set_index('datetime')
+
+
             else:
+            
                 model = mapie.regression.MapieRegressor(self.forecaster, cv="prefit")
                 model.fit(self.exog,self.data[input_features['Forecasted_param']].loc[self.exog.index])
                 model.single_estimator_ = self.forecaster
@@ -598,7 +688,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         try:
             if check_time_zone == False:
-                data['datetime'] = pd.to_datetime(data['datetime']).dt.tz_localize('Australia/Sydney', ambiguous='infer')
+                data['datetime'] = pd.to_datetime(data['datetime'])
             else:
                 data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
         except Exception:
@@ -621,9 +711,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             data_weather: Union[pd.DataFrame, None] = None
         elif weatherdatapath is not None:
             raw_weather_data = pd.read_csv(weatherdatapath)
-            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features)
+            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
         else:
-            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features)
+            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
 
         # The parameters to be forecasted. It should be a column name in the input data.
         if forecasted_param is None:
@@ -764,10 +854,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         if algorithm is None:
             input_features['algorithm'] = 'iterated'
-        elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking':
+        elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking' or algorithm == 'prophet':
             input_features['algorithm'] = algorithm
         else:
-            raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified'.")
+            raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified' or 'prophet'.")
 
         if run_sequentially is None or run_sequentially == False:
             input_features['mac_user'] = False
@@ -855,12 +945,12 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_wea
         customer.f_steps = np.arange(len(customer.new_index))
 
     if data_weather is not None and customer.exog is not None:
-        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1).fillna(0)
-        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.new_index,data_weather)], axis = 1).fillna(0)
+        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1).interpolate(method = 'linear')
+        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.new_index,data_weather)], axis = 1).interpolate(method = 'linear')
         customer.f_steps = customer.exog_f
     elif data_weather is not None:
-        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather).fillna(0)
-        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather).fillna(0)
+        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather).interpolate(method = 'linear')
+        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather).interpolate(method = 'linear')
         customer.f_steps = customer.exog_f
 
 # This function outputs the forecasting for each nmi
