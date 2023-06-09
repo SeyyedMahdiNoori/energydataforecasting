@@ -14,7 +14,7 @@ from dateutil.parser import ParserError
 
 from typing import Union, Dict, Tuple, List
 
-from forecasting import Customers, add_weather_data_to_customers
+from converge_load_forecasting import Customers, add_weather_data_to_customers
 
 # Warnings configuration
 # ==============================================================================
