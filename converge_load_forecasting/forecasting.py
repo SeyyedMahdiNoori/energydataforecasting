@@ -579,7 +579,7 @@ class Customers:
         
         QP_coeff = (self.data.reactive_power.between_time('0:00','5:00')/self.data.active_power.between_time('0:00','5:00')[self.data.active_power.between_time('0:00','5:00') > 0.001]).resample('D').mean()
         QP_coeff[pd.Timestamp((QP_coeff.index[-1] + datetime.timedelta(days=1)).strftime("%Y-%m-%d"))] = QP_coeff[-1]
-        QP_coeff = QP_coeff.resample(input_features['data_freq']).ffill()
+        QP_coeff = QP_coeff.resample(self.data.index.freq).ffill()
         QP_coeff = QP_coeff.drop(QP_coeff.index[-1])
         QP_coeff = QP_coeff[QP_coeff.index <= self.data.reactive_power.index[-1]]
 
@@ -589,13 +589,11 @@ class Customers:
         load_est = self.data.reactive_power / QP_coeff 
         pv_est = load_est  - self.data.active_power
         pv_est[pv_est < 0] = 0
-        # pv_est = pv_est[~pv_est.index.duplicated(keep='first')]
         load_est = pv_est + self.data.active_power
         
-        self.data['pv_disagg'] = pv_est
-        self.data['demand_disagg'] = load_est
+        return load_est, pv_est
 
-    def Generate_disaggregation_positive_minimum_PV(self):
+    def Generate_disaggregation_positive_minimum_PV(self,input_features):
         '''
         generate_disaggregation_using_reactive()
         
@@ -604,12 +602,8 @@ class Customers:
         More about this approach can be found in "Customer-Level Solar-Demand Disaggregation: The Value of Information".
         '''
 
-        D = copy.deepcopy(self.data.active_power)
-        D[D<=0] = 0
-        S = copy.deepcopy(self.data.active_power)
-        S[S>=0] = 0
-        self.data['pv_disagg'] =  - S
-        self.data['demand_disagg'] = D
+        return self.data[input_features["Forecasted_param"]].clip(lower = 0), - self.data[input_features["Forecasted_param"]].clip(upper = 0)
+
 
 class Initialise_output:
             def __init__(self, customers, input_features, customers_nmi, datetimes, data_weather) -> None:
