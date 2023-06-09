@@ -177,7 +177,7 @@ def SDD_Same_Irrad_no_PV_houses_single_time(time_step,customers,customers_with_p
     t = time_step
     print(" Disaggregating {first}-th time step".format(first = t))
 
-    datetimes = list(customers[customers_with_pv_nmi[0]].data.index)
+    datetimes = list(customers[list(customers.keys())[0]].data.index)
 
     model=ConcreteModel()
 

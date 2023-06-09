@@ -11,12 +11,6 @@ from sklearn.metrics import mean_squared_error
 
 import converge_load_forecasting as cld
 
-#### Use either path data approach if data is available or raw data approach to download it from a server
-# # raw_data read from a server
-# raw_data = pd.read_csv(NextGen_network_data_url)
-# raw_weather_data = pd.read_csv(canberra_weather_url)
-# data, customers_nmi,customers_nmi_with_pv,datetimes, customers, data_weather, input_features = initialise(raw_data = raw_data,raw_weather_data=raw_weather_data)
-
 # Donwload if data is availbale in csv format
 customersdatapath = './NextGen_example.csv'
 weatherdatapath = './Canberra_weather_data.csv'
@@ -26,8 +20,6 @@ data_initialised = cld.initialise(customersdatapath = customersdatapath,
                                     core_usage = 4
                               )
 
-
-import copy
 customers_nmi_with_pv = data_initialised.customers_nmi
 
 # ################
@@ -47,7 +39,6 @@ customers_without_pv_nmi  = [customers_nmi_with_pv[i] for i in np.random.default
 customers_with_pv_nmi = [i for i in customers_nmi_with_pv if i not in customers_without_pv_nmi]
 known_pv_nmi = [customers_with_pv_nmi[i] for i in np.random.default_rng().choice(len(customers_with_pv_nmi), size=3, replace=False) if i != nmi]
 customers_known_pv = {i: data_initialised.customers[i] for i in known_pv_nmi}
-
 
 
 # ####################################################################
