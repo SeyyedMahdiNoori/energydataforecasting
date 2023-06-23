@@ -66,8 +66,7 @@ def pool_executor_parallel_SDD(function_name, repeat_iter, input_features):
 
 def SDD_min_solar_single_node(customer,input_features):
 
-    print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
-
+    # print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
     demand , solar = customer.Generate_disaggregation_positive_minimum_PV(input_features)
 
     result = pd.concat([demand, solar], axis=1, keys=['demand_disagg', 'pv_disagg'])
