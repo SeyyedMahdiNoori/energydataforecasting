@@ -1581,6 +1581,8 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 
 def long_term_load_forecasting_single_node(customer: Customers, input_features: Dict, data_weather: pd.DataFrame) -> pd.DataFrame:
 
+    original_param = input_features["Forecasted_param"]
+
     # # Use iterated interval algorithm from skforecast
     input_features['algorithm'] = 'iterated' 
     input_features['probabilistic_algorithm'] == 'bootstrap'
@@ -1607,9 +1609,15 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     # # adjust predictions based on the maximum and minmum values in the data
     demand_coeff = np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10))
     solar_coeff = np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10))
+    
+    if math.isnan(solar_coeff) == True:
+        solar_coeff = 0
+
+    if math.isnan(demand_coeff) == True:
+        demand_coeff = 0
 
     # # Aggregate solar and demand
-    input_features["Forecasted_param"] = 'real_power_w'
+    input_features["Forecasted_param"] = original_param
     pred = prediction_demand.loc[customer.nmi].demand * demand_coeff + prediction_solar.loc[customer.nmi].solar * solar_coeff
     pred_lower = prediction_demand.loc[customer.nmi].lower_bound + prediction_solar.loc[customer.nmi].lower_bound * solar_coeff
     pred_upper = prediction_demand.loc[customer.nmi].upper_bound * demand_coeff + prediction_solar.loc[customer.nmi].upper_bound
