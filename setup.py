@@ -21,7 +21,7 @@ setup(
         'more_itertools',
         'multiprocess',
         'pandas',
-        'prophet==1.1.3',
+        'prophet==1.1.4',
         'pyomo',
         'pytz',
         'skforecast==0.7.0',
