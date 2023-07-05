@@ -1602,9 +1602,9 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     prediction_solar = forecast_inetervalbased_single_node(customer,input_features,data_weather[['temp','humidity','solarradiation']])
 
     # # adjust solar predictions based on the solarradiation values (maing it zero for early morning and late night time steps)
-    prediction_solar.loc[customer.nmi].lower_bound[data_weather['solarradiation'] < 50]= 0
-    prediction_solar.loc[customer.nmi].upper_bound[data_weather['solarradiation'] < 30]= 0
-    prediction_solar.loc[customer.nmi].solar[data_weather['solarradiation'] < 40]= 0
+    prediction_solar.loc[customer.nmi].lower_bound[data_weather['solarradiation'] < 0]= 0
+    prediction_solar.loc[customer.nmi].upper_bound[data_weather['solarradiation'] < 0]= 0
+    prediction_solar.loc[customer.nmi].solar[data_weather['solarradiation'] < 0]= 0
 
     # # adjust predictions based on the maximum and minmum values in the data
     demand_coeff = np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10))
