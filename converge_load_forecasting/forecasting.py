@@ -87,11 +87,11 @@ def add_weather_data_to_customers(time_series_data_index, data_weather):
     try:
        time_series_data_freq_int = int(time_series_data_index.freqstr[:-1])
     except Exception:
-        if data_weather.index.freqstr == 'H':
+        if time_series_data_index.freqstr == 'H':
             time_series_data_freq_int = 60
-        elif data_weather.index.freqstr == 'T':
+        elif time_series_data_index.freqstr == 'T':
             time_series_data_freq_int = 1
-        elif data_weather.index.freqstr == 'D':
+        elif time_series_data_index.freqstr == 'D':
             time_series_data_freq_int = 1440
 
     if data_weather_freq_int ==  time_series_data_freq_int:
@@ -245,7 +245,13 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
         steps_to_be_forecasted = math.floor(delta.total_seconds() / freq_str.total_seconds())
     
     else:
-        steps_to_be_forecasted = math.floor( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
+
+        try:
+            freq_str = pd.to_timedelta(data.index.freqstr)
+        except Exception:
+            freq_str = pd.to_timedelta('1' + data.index.freqstr)
+
+        steps_to_be_forecasted = math.floor( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / freq_str.total_seconds())
 
     if steps_to_be_forecasted < 0:
         steps_to_be_forecasted = math.floor( ( 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
@@ -1595,16 +1601,18 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     print('demand prediction')
     input_features["Forecasted_param"] = 'demand'
     prediction_demand = forecast_inetervalbased_single_node(customer,input_features,data_weather[['temp','humidity']])
+    
+     # # adjust solar predictions (making it zero if it is negative)
+    prediction_demand.loc[customer.nmi][prediction_demand.loc[customer.nmi] < 0 ] = 0
 
     # # forecast solar
     print('solar prediction')
     input_features["Forecasted_param"] = 'solar'
     prediction_solar = forecast_inetervalbased_single_node(customer,input_features,data_weather[['temp','humidity','solarradiation']])
-
-    # # adjust solar predictions based on the solarradiation values (maing it zero for early morning and late night time steps)
-    prediction_solar.loc[customer.nmi].lower_bound[data_weather['solarradiation'] < 0]= 0
-    prediction_solar.loc[customer.nmi].upper_bound[data_weather['solarradiation'] < 0]= 0
-    prediction_solar.loc[customer.nmi].solar[data_weather['solarradiation'] < 0]= 0
+    
+    # # adjust solar predictions based on the solarradiation values (making it zero for early morning and late night time steps, and if it is positive)
+    prediction_solar.loc[customer.nmi][prediction_solar.loc[customer.nmi] > 0 ] = 0
+    prediction_solar.loc[customer.nmi][add_weather_data_to_customers(prediction_solar.loc[customer.nmi].index,data_weather['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
     demand_coeff = np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10))
