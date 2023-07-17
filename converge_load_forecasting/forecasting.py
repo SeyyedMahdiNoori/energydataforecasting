@@ -467,7 +467,8 @@ class Customers:
 
         elif input_features['algorithm'] == 'prophet':
 
-            future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
+            # future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
+            future = pd.DataFrame({'ds': self.exog_f.index})
             
             if self.exog_f is not None:
                 exog_f = self.exog_f.reset_index()
@@ -1062,6 +1063,7 @@ def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,st
 
     predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features, data_weather)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
+    # predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
 
     return predictions_prallel
 
@@ -1662,3 +1664,28 @@ def long_term_load_forecasting_multiple_nodes(customers: Dict[Union[int,str],Cus
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
     
     return preds
+
+def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[int,str],Customers], input_features: Dict) -> pd.DataFrame:
+    
+    tscv = sklearn.model_selection.TimeSeriesSplit(n_splits=number_of_splits)
+    generator = {nmi: tscv.split(customers[nmi].data) for nmi in customers.keys()}
+
+    res = []
+    for range_number in range(0,number_of_splits):
+
+        for nmi in customers.keys():
+            
+            input_features["end_training"] = customers[nmi].data.index[next(generator[nmi])[0]][-1].strftime("%Y-%m-%d %H:%M:%S")
+            
+            [customers[nmi].start_training, customers[nmi].end_training,
+                customers[nmi].last_observed_window, customers[nmi].window_size,
+                    customers[nmi].data, customers[nmi].data_freq, customers[nmi].steps_to_be_forecasted] = fill_input_dates_per_customer(customers[nmi].data,input_features)
+
+        prediction = forecast_pointbased_multiple_nodes_parallel(customers,input_features)
+        res.append(prediction)
+
+    res_com  = pd.concat(res,axis=1)
+    new_column_names = [f'{res_com.columns[0]}_{i+1}' for i in range(len(res_com.columns))]
+    res_com.columns = new_column_names
+
+    return res_com
