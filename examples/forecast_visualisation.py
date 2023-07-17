@@ -150,7 +150,7 @@ plt.show()
 # # ====================================================================================================
 
 # generate forecasting values for a specific nmi using a recursive multi-step point-forecasting method
-data_initialised.input_features['exog'] = True
+data_initialised.input_features['time_proxy'] = True
 prediction = clf.forecast_pointbased_multiple_nodes(customer,data_initialised.input_features)
 
 fig, ax = plt.subplots(figsize=(12, 3.5))
