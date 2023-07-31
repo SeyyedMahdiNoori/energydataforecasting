@@ -304,7 +304,10 @@ def weather_input_data_cleaner(raw_weather_data, input_features, tzinfo):
         if check_time_zone == True:
             raw_weather_data = raw_weather_data.tz_convert(tzinfo)
         else:
-            raw_weather_data = raw_weather_data.tz_localize(tzinfo)
+            try:
+                raw_weather_data = raw_weather_data.tz_localize(tzinfo)
+            except Exception:
+                raw_weather_data = raw_weather_data.tz_localize(tzinfo, ambiguous='infer')
 
     try:
         raw_weather_data['Temp_EWMA'] = raw_weather_data.AirTemp.ewm(com=0.5).mean()
@@ -313,6 +316,8 @@ def weather_input_data_cleaner(raw_weather_data, input_features, tzinfo):
             raw_weather_data['Temp_EWMA'] = raw_weather_data.temp.ewm(com=0.5).mean()
         except Exception:
             pass
+    
+    raw_weather_data = raw_weather_data.dropna(axis = 1)
     
     raw_weather_data = raw_weather_data[~raw_weather_data.index.duplicated(keep='first')]
 
@@ -718,7 +723,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # The parameters to be forecasted. It should be a column name in the input data.
         if forecasted_param is None:
-            input_features['Forecasted_param'] = 'active_power'
+            if 'active_power' in data.columns:
+                input_features['Forecasted_param'] = 'active_power'
+            else:
+                raise ValueError('forecasted_param needs to be provided or the input data should have a column name "active_power".')
         elif forecasted_param in data.columns:
             input_features['Forecasted_param'] = forecasted_param
         else:
@@ -861,9 +869,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified' or 'prophet'.")
 
         if run_sequentially is None or run_sequentially == False:
-            input_features['mac_user'] = False
+            input_features['run_sequentially'] = False
         elif run_sequentially == True:
-            input_features['mac_user'] = True
+            input_features['run_sequentially'] = True
         else:
             raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
 
@@ -1323,7 +1331,7 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
             customers_partipant[i].data, customers_partipant[i].data_freq, customers_partipant[i].steps_to_be_forecasted] = fill_input_dates_per_customer(customers_partipant[i].data,input_features)
 
     # generate forecate for participant customers.
-    if input_features['mac_user'] == True:
+    if input_features['run_sequentially'] == True:
         participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_weather)
     else:
         participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_weather)
@@ -1377,7 +1385,7 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     
     hist_data_proxy_customers = {i: customers_partipant[i] for i in list(customers_partipant.keys())[0:number_of_proxy_customers]}
     
-    if input_features['mac_user'] == True:
+    if input_features['run_sequentially'] == True:
         non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
     else:
         non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
@@ -1680,8 +1688,12 @@ def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[in
             [customers[nmi].start_training, customers[nmi].end_training,
                 customers[nmi].last_observed_window, customers[nmi].window_size,
                     customers[nmi].data, customers[nmi].data_freq, customers[nmi].steps_to_be_forecasted] = fill_input_dates_per_customer(customers[nmi].data,input_features)
+        
+        if input_features['run_sequentially'] == True:
+            prediction = forecast_pointbased_multiple_nodes(customers,input_features)
+        else:
+            prediction = forecast_pointbased_multiple_nodes_parallel(customers,input_features)
 
-        prediction = forecast_pointbased_multiple_nodes_parallel(customers,input_features)
         res.append(prediction)
 
     res_com  = pd.concat(res,axis=1)
