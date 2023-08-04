@@ -1271,7 +1271,8 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
                                      end_non_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None,                                 
                                      non_participants:  Union[List[Union[int,str]], None] = None,
                                      number_of_proxy_customers: Union[int, None] = None,
-                                     data_weather: Union[pd.DataFrame, None] = None
+                                     data_weather: Union[pd.DataFrame, None] = None,
+                                     proxy_complete: Union[bool, None] = None
                                      ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     
     '''
@@ -1292,7 +1293,15 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
         non_participants = [i for i in customers.keys() if i not in participants]
 
     # create a dictionary of customers with the participant nmi as keys.
-    customers_partipant = {i: customers[i] for i in participants}    
+    customers_partipant = {}
+    for i in participants:
+        try:
+            customers_partipant[i] = customers[i]
+        except KeyError:
+            try:
+                customers_partipant[str(i)] = customers[str(i)]
+            except KeyError:
+                customers_partipant[int(i)] = customers[int(i)]
     
     # create a dictionary of customers with the non-participant nmi as keys.
     customers_non_participant = {i: customers[i] for i in non_participants}
@@ -1331,18 +1340,27 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
             customers_partipant[i].data, customers_partipant[i].data_freq, customers_partipant[i].steps_to_be_forecasted] = fill_input_dates_per_customer(customers_partipant[i].data,input_features)
 
     # generate forecate for participant customers.
-    if input_features['run_sequentially'] == True:
-        participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_weather)
+    if proxy_complete == True:
+    
+        for i in customers_partipant.keys():
+            customers_partipant[i].data = customers_partipant[i].data.rename(columns={input_features['Forecasted_param']: 'added'})
+            participants_pred = None
+
     else:
-        participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_weather)
+        if input_features['run_sequentially'] == True:
+            participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_weather)
+        else:
+            participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_weather)
 
-    # combine forecast and historical data for participant customers.
-    for i in participants_pred.index.levels[0]:
+        # combine forecast and historical data for participant customers.
+        for i in participants_pred.index.levels[0]:
 
-        temp = pd.DataFrame(pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]]))
-        temp = temp[~temp.index.duplicated(keep='first')]
+            temp = pd.DataFrame(pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]]))
+            temp = temp[~temp.index.duplicated(keep='first')]
+    
         customers_partipant[i].data = pd.concat([customers_partipant[i].data,
-                                                 temp.rename(columns={input_features['Forecasted_param']: 'added'})], axis=1)
+                                                    temp.rename(columns={input_features['Forecasted_param']: 'added'})], axis=1)
+
 
     # update the inpute feature parameter, so that it matches the dates for the non-participant customers.
     if end_non_participants_date is not None:
@@ -1380,9 +1398,6 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     if number_of_proxy_customers is None:
         number_of_proxy_customers = min(30,len(participants))
 
-    # generate forecate for non-participant customers.
-    # non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(customers_partipant, customers_non_participant, input_features, number_of_proxy_customers)
-    
     hist_data_proxy_customers = {i: customers_partipant[i] for i in list(customers_partipant.keys())[0:number_of_proxy_customers]}
     
     if input_features['run_sequentially'] == True:
