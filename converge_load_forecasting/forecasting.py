@@ -32,6 +32,11 @@ import math
 import mapie
 from threadpoolctl import threadpool_limits
 from prophet import Prophet
+import joblib
+import os
+
+
+
 
 # Warnings configuration
 # ==============================================================================
@@ -187,6 +192,15 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
     df_new = df_new.interpolate(method = 'linear')
 
     return df_new
+
+def save_forecaster_to_file(data, filepath):
+    # Save the list to disk using joblib.dump
+    joblib.dump(data, filepath)
+
+def load_forecaster_from_file(filepath):
+    # Load the list from disk using joblib.load
+    loaded_forecaster = joblib.load(filepath)
+    return loaded_forecaster
 
 def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: Dict) -> Tuple[str, str, str, str, pd.DataFrame, str, int]:
     '''
@@ -452,6 +466,9 @@ class Customers:
                     data_in = pd.concat([data_in,exog],axis=1)
 
                 self.forecaster.fit(data_in)
+            
+            if input_features['save_forecaster_path'] is not None:
+                save_forecaster_to_file(self.forecaster, input_features['save_forecaster_path'] + '/' + self.nmi + '.joblib')
 
     def generate_prediction(self, input_features: Dict) -> None:
         """
@@ -643,7 +660,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None, loss_function: Union[str, None] = None,
                 time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
-                time_zone: Union[str, None] = None ) -> Union[Initialise_output,None]: 
+                time_zone: Union[str, None] = None, save_forecaster_path: Union[str, None] = None ) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
@@ -881,6 +898,14 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             input_features['probabilistic_algorithm'] = probabilistic_algorithm
         else:
             raise TypeError(f"{probabilistic_algorithm} is NOT valid. It should be 'bootstrap'  or 'jackknife' or left blank.")
+
+        if save_forecaster_path is None:
+            input_features['save_forecaster_path'] = None
+        else:
+            if os.path.exists(save_forecaster_path) == True:
+                input_features['save_forecaster_path'] = save_forecaster_path
+            else:
+                raise ValueError(f"{save_forecaster_path} does not exists")
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
@@ -1358,7 +1383,7 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
             temp = pd.DataFrame(pd.concat([pd.DataFrame(customers_partipant[i].data[input_features['Forecasted_param']]),participants_pred.loc[i]]))
             temp = temp[~temp.index.duplicated(keep='first')]
     
-        customers_partipant[i].data = pd.concat([customers_partipant[i].data,
+            customers_partipant[i].data = pd.concat([customers_partipant[i].data,
                                                     temp.rename(columns={input_features['Forecasted_param']: 'added'})], axis=1)
 
 
@@ -1716,3 +1741,116 @@ def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[in
     res_com.columns = new_column_names
 
     return res_com
+
+def near_cast(customers_nmis: list, forecasters_file_path, new_data, days_to_be_forecasted=None, forecasted_param = None):
+
+    files_in_dirctory = list(os.listdir(forecasters_file_path))
+    forecaster_files = [x[:-7] for x in files_in_dirctory if '.joblib' in x]
+
+    forecasters = {}
+    for nmi in customers_nmis:
+        if nmi in forecaster_files:
+            forecasters[nmi] = load_forecaster_from_file(forecasters_file_path + '/'+ nmi + '.joblib')
+        
+    preds = [run_single_near_cast(forecasters[i],new_data.loc[i],forecaster_files,nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param) for i in forecasters.keys()]
+
+    preds = pd.concat(preds, axis=0)
+    preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
+    
+    return preds
+
+def generate_index_near_cast(forecaster):
+    
+    return pd.date_range(   start=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size )[0],
+                            end=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size)[-1],
+                            freq= forecaster.last_window.index.inferred_freq)  
+
+def generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted = None, date_to_be_forecasted = None):
+    
+    if days_to_be_forecasted is None:
+        
+        if len(date_to_be_forecasted) == 10:
+            delta = datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d') - last_window_index.iloc[0]
+        else:
+            delta = datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d %H:%M:%S') - last_window_index.iloc[0]
+
+        try:
+            freq_str = pd.to_timedelta(last_window_index.freqstr)
+        except Exception:
+            freq_str = pd.to_timedelta('1' + last_window_index.freqstr)
+
+        steps_to_be_forecasted = math.floor(delta.total_seconds() / freq_str.total_seconds())
+    
+    else:
+
+        try:
+            freq_str = pd.to_timedelta(last_window_index.freqstr)
+        except Exception:
+            freq_str = pd.to_timedelta('1' + last_window_index.freqstr)
+
+        steps_to_be_forecasted = math.floor( ( days_to_be_forecasted * 24 * 3600)  / freq_str.total_seconds())
+
+    if steps_to_be_forecasted < 0:
+        steps_to_be_forecasted = math.floor( ( 24 * 3600)  / pd.to_timedelta(last_window_index.freqstr).total_seconds())
+
+    exog_index =  pd.date_range(   start=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size * 2 )[0],
+                            end=  (forecaster.last_window.index + forecaster.last_window.index.freq * steps_to_be_forecasted * 2 )[-1],
+                            freq= forecaster.last_window.index.inferred_freq)        
+    
+    return exog_index, steps_to_be_forecasted
+     
+
+def run_single_near_cast(forecaster,new_data,forecaster_files,nmi,proxy_measure=None,forecasted_param = None, days_to_be_forecasted=None):
+
+    last_window_index = generate_index_near_cast(forecaster)
+    exog_index, steps_to_be_forecasted = generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted)
+
+    exog_columns = forecaster.exog_col_names
+
+    if exog_columns == None:
+        exog = None
+    elif 'minute_sin' in exog_columns:
+        exog = encoding_cyclical_time_features(exog_index)
+    
+    try: 
+        other_exog_columns = [x for x in exog_columns if x not in ['minute_sin', 'minute_cos']]
+    except:
+        other_exog_columns =  None
+
+    if other_exog_columns is not None:
+        
+        for proxy_name in other_exog_columns:
+
+            if proxy_name in forecaster_files:
+            
+                pass
+            
+            elif proxy_name in proxy_name.columns:
+                    
+                if exog is None:
+                    exog = proxy_measure.loc[proxy_name].loc[exog_index]
+                else:
+                    pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
+        
+            else:
+                raise ValueError(f'{proxy_name} is provided in the training step but is not provided for the near cast function.')
+
+    if forecasted_param is None:
+        forecasted_param = 'active_power'
+    
+    if new_data.index.freq == None:
+        new_data.index.freq = new_data.index.inferred_freq 
+    
+    result = pd.DataFrame(
+                    forecaster.predict(
+                        steps = steps_to_be_forecasted,
+                        last_window = new_data.loc[last_window_index][forecasted_param],
+                        exog = exog) )
+    
+    result['nmi'] = [nmi] * len(result)
+    result.rename_axis('datetime',inplace = True)
+    result.set_index('nmi',append = True,inplace=True)
+    result = result.swaplevel()
+
+    return result
+        
