@@ -77,17 +77,17 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
 
     return exog_time
 
-def add_weather_data_to_customers(time_series_data_index, data_weather):
+def prepare_proxy_data_for_training(time_series_data_index, data_proxy):
 
     try:
-        data_weather_freq_int = int(data_weather.index.freqstr[:-1])
+        data_proxy_freq_int = int(data_proxy.index.freqstr[:-1])
     except Exception:
-        if data_weather.index.freqstr == 'H':
-            data_weather_freq_int = 60
-        elif data_weather.index.freqstr == 'T':
-            data_weather_freq_int = 1
-        elif data_weather.index.freqstr == 'D':
-            data_weather_freq_int = 1440
+        if data_proxy.index.freqstr == 'H':
+            data_proxy_freq_int = 60
+        elif data_proxy.index.freqstr == 'T':
+            data_proxy_freq_int = 1
+        elif data_proxy.index.freqstr == 'D':
+            data_proxy_freq_int = 1440
     
     try:
        time_series_data_freq_int = int(time_series_data_index.freqstr[:-1])
@@ -99,14 +99,14 @@ def add_weather_data_to_customers(time_series_data_index, data_weather):
         elif time_series_data_index.freqstr == 'D':
             time_series_data_freq_int = 1440
 
-    if data_weather_freq_int ==  time_series_data_freq_int:
-        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]]
-    elif data_weather_freq_int <  time_series_data_freq_int:
-        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).mean()
+    if data_proxy_freq_int ==  time_series_data_freq_int:
+        exog_proxy = data_proxy.loc[time_series_data_index[0]:time_series_data_index[-1]]
+    elif data_proxy_freq_int <  time_series_data_freq_int:
+        exog_proxy = data_proxy.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).mean()
     else:
-        exog_weather = data_weather.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).pad()
+        exog_proxy = data_proxy.loc[time_series_data_index[0]:time_series_data_index[-1]].resample(time_series_data_index.freqstr).pad()
 
-    return exog_weather
+    return exog_proxy
 
 def generate_output_adjusted_format_for_predictions(result: pd.DataFrame, customer, input_features: Dict) -> pd.DataFrame:
     '''
@@ -278,17 +278,20 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
 
-def weather_input_data_cleaner(raw_weather_data, input_features, tzinfo):
-            
-    raw_weather_data.rename(columns={"PeriodStart": "datetime"},inplace=True)
+def proxy_input_data_cleaner(raw_proxy_data, input_features, tzinfo):
+
+    try:        
+        raw_proxy_data.rename(columns={"PeriodStart": "datetime"},inplace=True)
+    except:
+        pass
     
     try:
-        raw_weather_data = raw_weather_data.drop('PeriodEnd', axis=1)
+        raw_proxy_data = raw_proxy_data.drop('PeriodEnd', axis=1)
     except:
         pass
 
     try:
-        raw_weather_data = raw_weather_data.drop('Period', axis=1)
+        raw_proxy_data = raw_proxy_data.drop('Period', axis=1)
     except:
         pass
     
@@ -296,48 +299,40 @@ def weather_input_data_cleaner(raw_weather_data, input_features, tzinfo):
     # # ###### Pre-process the data ######
     # format datetime to pandas datetime format
     try:
-        check_time_zone = has_timezone(raw_weather_data.datetime[0])
+        check_time_zone = has_timezone(raw_proxy_data.datetime[0])
     except AttributeError:
         raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
 
     try:
         
         if check_time_zone == False:
-            raw_weather_data['datetime'] = pd.to_datetime(raw_weather_data['datetime'])
+            raw_proxy_data['datetime'] = pd.to_datetime(raw_proxy_data['datetime'])
         else:
-            raw_weather_data['datetime'] = pd.to_datetime(raw_weather_data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+            raw_proxy_data['datetime'] = pd.to_datetime(raw_proxy_data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
 
     except ParserError:
         raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
 
-    raw_weather_data.set_index('datetime', inplace=True)
+    raw_proxy_data.set_index('datetime', inplace=True)
 
     if tzinfo is None:
-        raw_weather_data = raw_weather_data.tz_localize(None)
+        raw_proxy_data = raw_proxy_data.tz_localize(None)
     else:
         if check_time_zone == True:
-            raw_weather_data = raw_weather_data.tz_convert(tzinfo)
+            raw_proxy_data = raw_proxy_data.tz_convert(tzinfo)
         else:
             try:
-                raw_weather_data = raw_weather_data.tz_localize(tzinfo)
+                raw_proxy_data = raw_proxy_data.tz_localize(tzinfo)
             except Exception:
-                raw_weather_data = raw_weather_data.tz_localize(tzinfo, ambiguous='infer')
-
-    try:
-        raw_weather_data['Temp_EWMA'] = raw_weather_data.AirTemp.ewm(com=0.5).mean()
-    except Exception:
-        try:        
-            raw_weather_data['Temp_EWMA'] = raw_weather_data.temp.ewm(com=0.5).mean()
-        except Exception:
-            pass
+                raw_proxy_data = raw_proxy_data.tz_localize(tzinfo, ambiguous='infer')
     
-    raw_weather_data = raw_weather_data.dropna(axis = 1)
+    raw_proxy_data = raw_proxy_data.dropna(axis = 1)
     
-    raw_weather_data = raw_weather_data[~raw_weather_data.index.duplicated(keep='first')]
+    raw_proxy_data = raw_proxy_data[~raw_proxy_data.index.duplicated(keep='first')]
 
-    raw_weather_data = fill_in_missing_data(raw_weather_data)
+    raw_proxy_data = fill_in_missing_data(raw_proxy_data)
 
-    return raw_weather_data
+    return raw_proxy_data
 
 
 # # ================================================================
@@ -635,12 +630,12 @@ class Customers:
 
 
 class Initialise_output:
-            def __init__(self, customers, input_features, customers_nmi, datetimes, data_weather) -> None:
+            def __init__(self, customers, input_features, customers_nmi, datetimes, data_proxy) -> None:
                 self.customers = customers
                 self.input_features = input_features
                 self.customers_nmi = customers_nmi
                 self.datetimes = datetimes
-                self.data_weather = data_weather
+                self.data_proxy = data_proxy
 
 # class Initialise_output:
 #             def __init__(self, data, customers, input_features, customers_nmi, datetimes) -> None:
@@ -655,15 +650,15 @@ class Initialise_output:
 # # ================================================================
 
 def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
-                weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
-                start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
+                proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
+                start_training: Union[str, None] = None, end_training: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None, loss_function: Union[str, None] = None,
                 time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
-                time_zone: Union[str, None] = None, save_forecaster_path: Union[str, None] = None ) -> Union[Initialise_output,None]: 
+                time_zone: Union[str, None] = None, save_forecaster_path: Union[str, None] = None, save_forecaster: Union[str, None] = None ) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
-                weatherdatapath: Union[str, None] = None, raw_weather_data: Union[pd.DataFrame, None] = None,
+                proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, nmi_type_path: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, core_usage: Union[int, None] = None,
                 db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None) -> Union[Initialise_output,None]: 
@@ -729,14 +724,14 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         # save unique dates of the data
         datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
 
-        # read and process weather data if it has been inputted
-        if weatherdatapath is None and raw_weather_data is None:
-            data_weather: Union[pd.DataFrame, None] = None
-        elif weatherdatapath is not None:
-            raw_weather_data = pd.read_csv(weatherdatapath)
-            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+        # read and process proxy data if it has been inputted
+        if proxydatapath is None and raw_proxy_data is None:
+            data_proxy: Union[pd.DataFrame, None] = None
+        elif proxydatapath is not None:
+            raw_proxy_data = pd.read_csv(proxydatapath)
+            data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
         else:
-            data_weather = weather_input_data_cleaner(raw_weather_data = raw_weather_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+            data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
 
         # The parameters to be forecasted. It should be a column name in the input data.
         if forecasted_param is None:
@@ -900,18 +895,25 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
             raise TypeError(f"{probabilistic_algorithm} is NOT valid. It should be 'bootstrap'  or 'jackknife' or left blank.")
 
         if save_forecaster_path is None:
-            input_features['save_forecaster_path'] = None
+            if save_forecaster is None or save_forecaster == False:
+                input_features['save_forecaster_path'] = None
+            elif save_forecaster == True:
+                if os.path.exists('./forecaster_files') == False:
+                    os.makedirs('./forecaster_files')
+                input_features['save_forecaster_path'] = './forecaster_files'
+            else:
+                raise ValueError(f"save_forecaster is {save_forecaster} instead of a Boolean input")
         else:
             if os.path.exists(save_forecaster_path) == True:
-                input_features['save_forecaster_path'] = save_forecaster_path
+                input_features['save_forecaster_path'] = save_forecaster_path 
             else:
-                raise ValueError(f"{save_forecaster_path} does not exists")
+                raise ValueError(f"{save_forecaster_path} does not exists save_forecaster is given something other than True")
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
 
         # data_initialised = Initialise_output(data, customers, input_features, customers_nmi, datetimes)
-        data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes, data_weather)
+        data_initialised = Initialise_output(customers, input_features, customers_nmi, datetimes, data_proxy)
         
         return data_initialised
 
@@ -925,15 +927,15 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 # # ==================================================================================================# # ==================================================================================================
 # # ==================================================================================================# # ==================================================================================================
 
-def pool_executor_parallel(function_name, repeat_iter, input_features,data_weather: Union[pd.DataFrame, None] = None):
+def pool_executor_parallel(function_name, repeat_iter, input_features,data_proxy: Union[pd.DataFrame, None] = None):
     '''
-    pool_executor_parallel(function_name,repeat_iter,input_features,data_weather: Union[pd.DataFrame, None] = None)
+    pool_executor_parallel(function_name,repeat_iter,input_features,data_proxy: Union[pd.DataFrame, None] = None)
     
     This function is used to parallelised the forecasting for each nmi
     '''
     
     with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,repeat_iter,itertools.repeat(input_features),itertools.repeat(data_weather))) 
+        results = list(executor.map(function_name,repeat_iter,itertools.repeat(input_features),itertools.repeat(data_proxy))) 
     return results
 
 
@@ -960,7 +962,7 @@ def generate_index_for_predicted_values(customer: Customers, input_features: Dic
 # # Autoregressive recursive multi-step point-forecasting method
 # # ================================================================
 
-def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> None:
+def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> None:
     '''
     add_exog_for_forecasting(customer: Customers, input_features: Dict) -> None
     This function generates cyclical time features for the class Customers to be used as an exogenous variable in the prediction algorithms or adds None in the class Customers
@@ -978,17 +980,17 @@ def add_exog_for_forecasting(customer: Customers, input_features: Dict, data_wea
         customer.exog_f = None
         customer.f_steps = np.arange(len(customer.new_index))
 
-    if data_weather is not None and customer.exog is not None:
-        customer.exog = pd.concat([customer.exog,add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather)], axis = 1).interpolate(method = 'linear')
-        customer.exog_f = pd.concat([customer.exog_f,add_weather_data_to_customers(customer.new_index,data_weather)], axis = 1).interpolate(method = 'linear')
+    if data_proxy is not None and customer.exog is not None:
+        customer.exog = pd.concat([customer.exog,prepare_proxy_data_for_training(customer.data.loc[customer.start_training:customer.end_training].index,data_proxy)], axis = 1).interpolate(method = 'linear')
+        customer.exog_f = pd.concat([customer.exog_f,prepare_proxy_data_for_training(customer.new_index,data_proxy)], axis = 1).interpolate(method = 'linear')
         customer.f_steps = customer.exog_f
-    elif data_weather is not None:
-        customer.exog = add_weather_data_to_customers(customer.data.loc[customer.start_training:customer.end_training].index,data_weather).interpolate(method = 'linear')
-        customer.exog_f = add_weather_data_to_customers(customer.new_index,data_weather).interpolate(method = 'linear')
+    elif data_proxy is not None:
+        customer.exog = prepare_proxy_data_for_training(customer.data.loc[customer.start_training:customer.end_training].index,data_proxy).interpolate(method = 'linear')
+        customer.exog_f = prepare_proxy_data_for_training(customer.new_index,data_proxy).interpolate(method = 'linear')
         customer.f_steps = customer.exog_f
 
 # This function outputs the forecasting for each nmi
-def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def run_forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_single_node(customers_nmi,input_features)
 
@@ -1001,7 +1003,7 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
     # print("{pid}: Customer nmi: {first}, {ts}".format(pid=os.getpid(), first = customer.nmi, ts=datetime.datetime.now()))
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
-    add_exog_for_forecasting(customer, input_features, data_weather)
+    add_exog_for_forecasting(customer, input_features, data_proxy)
 
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
@@ -1013,15 +1015,15 @@ def run_forecast_pointbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_pointbased_single_node(customer: Customers, input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
     
-    return run_forecast_pointbased_single_node(customer, input_features, data_weather)
+    return run_forecast_pointbased_single_node(customer, input_features, data_proxy)
 
 
-def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
@@ -1033,7 +1035,7 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features, data_weather)
+    predictions_prallel = pool_executor_parallel(run_forecast_pointbased_single_node,customers.values(),input_features, data_proxy)
 
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
     predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
@@ -1041,12 +1043,12 @@ def forecast_pointbased_multiple_nodes_parallel(customers: Dict[Union[int,str],C
     return predictions_prallel
 
 
-def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    preds = [run_forecast_pointbased_single_node(customers[i],input_features,data_weather) for i in customers.keys()]
+    preds = [run_forecast_pointbased_single_node(customers[i],input_features,data_proxy) for i in customers.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -1058,7 +1060,7 @@ def forecast_pointbased_multiple_nodes(customers: Dict[Union[int,str],Customers]
 # # ================================================================
 
 # This function outputs the forecasting for each nmi
-def forecast_inetervalbased_single_node(customer: Customers, input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_inetervalbased_single_node(customer: Customers, input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_inetervalbased_single_node(customers_nmi,input_features)
 
@@ -1070,7 +1072,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
 
     # Add exogonous variables (time and weekday information) to each customer if exog is selected True in the initialise function. Otherwise, it does nothin.
     input_features['time_proxy'] = True
-    add_exog_for_forecasting(customer, input_features, data_weather)
+    add_exog_for_forecasting(customer, input_features, data_proxy)
     
     # Train a forecasting object
     customer.generator_forecaster_object(input_features)
@@ -1082,7 +1084,7 @@ def forecast_inetervalbased_single_node(customer: Customers, input_features: Dic
 
     return result
 
-def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
     """
     forecast_inetervalbased_multiple_nodes(customers_nmi,input_features)
 
@@ -1094,18 +1096,18 @@ def forecast_inetervalbased_multiple_nodes_parallel(customers: Dict[Union[int,st
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'jackknife'
 
-    predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features, data_weather)
+    predictions_prallel = pool_executor_parallel(forecast_inetervalbased_single_node,customers.values(),input_features, data_proxy)
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
     # predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
 
     return predictions_prallel
 
-def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def forecast_inetervalbased_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'jackknife'
 
-    preds = [forecast_inetervalbased_single_node(customers[i], input_features, data_weather) for i in customers.keys()]
+    preds = [forecast_inetervalbased_single_node(customers[i], input_features, data_proxy) for i in customers.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -1163,7 +1165,7 @@ def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,s
 
     return cus_rep
 
-def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_proxy: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
     """
     forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict[Union[int,str],Customers], customer: Customers, input_features: Dict, number_of_proxy_customers: Union[int, None] = None ) -> pd.DataFrame
 
@@ -1183,7 +1185,7 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
 
     customers_proxy = check_corr_cause_proxy_customer(hist_data_proxy_customers, customer, input_features, number_of_proxy_customers)
     
-    add_exog_for_forecasting(customer,input_features, data_weather)
+    add_exog_for_forecasting(customer,input_features, data_proxy)
 
     if customer.exog is None and len(customers_proxy.columns) == 0:
         
@@ -1239,18 +1241,18 @@ def forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers: Dict
     return result
 
 
-def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], n_customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers: Dict[Union[int,str],Customers], n_customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_proxy: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
 
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    preds = [forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,n_customers[i],input_features, number_of_proxy_customers,data_weather) for i in n_customers.keys()]
+    preds = [forecast_pointbased_exog_reposit_single_node(hist_data_proxy_customers,n_customers[i],input_features, number_of_proxy_customers,data_proxy) for i in n_customers.keys()]
 
     return pd.concat(preds, axis=0)
 
 
 
-def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat_iter, input_features, number_of_proxy_customers,data_weather):
+def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat_iter, input_features, number_of_proxy_customers,data_proxy):
     '''
     pool_executor_parallel(function_name,repeat_iter,input_features)
     
@@ -1258,7 +1260,7 @@ def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat
     '''
 
     with ProcessPoolExecutor(max_workers=input_features['core_usage'],mp_context=mp.get_context('fork')) as executor:
-        results = list(executor.map(function_name,itertools.repeat(hist_data_proxy_customers),repeat_iter,itertools.repeat(input_features),itertools.repeat(number_of_proxy_customers),itertools.repeat(data_weather)))  
+        results = list(executor.map(function_name,itertools.repeat(hist_data_proxy_customers),repeat_iter,itertools.repeat(input_features),itertools.repeat(number_of_proxy_customers),itertools.repeat(data_proxy)))  
     return results
 
     # with ThreadPoolExecutor(max_workers=input_features['core_usage']) as executor:
@@ -1266,7 +1268,7 @@ def pool_executor_parallel_exog(function_name, hist_data_proxy_customers, repeat
     # return results
 
 
-def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_weather: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
+def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers: Dict[Union[int,str],Customers], customers: Dict[Union[int,str],Customers], input_features: Dict, number_of_proxy_customers: Union[int, None] = None, data_proxy: Union[pd.DataFrame, None] = None ) -> pd.DataFrame:
     """
     forecast_pointbased_exog_reposit_multiple_nodes_parallel(customers_nmi,input_features)
 
@@ -1278,7 +1280,7 @@ def forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_cus
     if input_features['probabilistic_algorithm'] is None:
         input_features['probabilistic_algorithm'] = 'bootstrap'
 
-    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers,data_weather)
+    predictions_prallel = pool_executor_parallel_exog(forecast_pointbased_exog_reposit_single_node,hist_data_proxy_customers,customers.values(),input_features,number_of_proxy_customers,data_proxy)
  
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
 
@@ -1296,7 +1298,7 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
                                      end_non_participants_date: Union[datetime.datetime, pd.Timestamp, None] = None,                                 
                                      non_participants:  Union[List[Union[int,str]], None] = None,
                                      number_of_proxy_customers: Union[int, None] = None,
-                                     data_weather: Union[pd.DataFrame, None] = None,
+                                     data_proxy: Union[pd.DataFrame, None] = None,
                                      proxy_complete: Union[bool, None] = None
                                      ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     
@@ -1373,9 +1375,9 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
 
     else:
         if input_features['run_sequentially'] == True:
-            participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_weather)
+            participants_pred = forecast_pointbased_multiple_nodes(customers_partipant, input_features, data_proxy)
         else:
-            participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_weather)
+            participants_pred = forecast_pointbased_multiple_nodes_parallel(customers_partipant, input_features, data_proxy)
 
         # combine forecast and historical data for participant customers.
         for i in participants_pred.index.levels[0]:
@@ -1426,9 +1428,9 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
     hist_data_proxy_customers = {i: customers_partipant[i] for i in list(customers_partipant.keys())[0:number_of_proxy_customers]}
     
     if input_features['run_sequentially'] == True:
-        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_proxy)
     else:
-        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_weather)
+        non_participants_pred = forecast_pointbased_exog_reposit_multiple_nodes_parallel(hist_data_proxy_customers, customers_non_participant, input_features, number_of_proxy_customers, data_proxy)
 
     return participants_pred, non_participants_pred
 
@@ -1635,7 +1637,7 @@ def forecast_lin_reg_proxy_measures_separate_time_steps(hist_data_proxy_customer
 # # Long term load forecasting for RIT-D
 # # ================================================================
 
-def long_term_load_forecasting_single_node(customer: Customers, input_features: Dict, data_weather: pd.DataFrame) -> pd.DataFrame:
+def long_term_load_forecasting_single_node(customer: Customers, input_features: Dict, data_proxy: pd.DataFrame) -> pd.DataFrame:
 
     original_param = input_features["Forecasted_param"]
 
@@ -1650,7 +1652,7 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     # # forecast demand
     print('demand prediction')
     input_features["Forecasted_param"] = 'demand'
-    prediction_demand = forecast_inetervalbased_single_node(customer,input_features,data_weather[['temp','humidity']])
+    prediction_demand = forecast_inetervalbased_single_node(customer,input_features,data_proxy[['temp','humidity']])
     
      # # adjust solar predictions (making it zero if it is negative)
     prediction_demand.loc[customer.nmi][prediction_demand.loc[customer.nmi] < 0 ] = 0
@@ -1658,11 +1660,11 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     # # forecast solar
     print('solar prediction')
     input_features["Forecasted_param"] = 'solar'
-    prediction_solar = forecast_inetervalbased_single_node(customer,input_features,data_weather[['temp','humidity','solarradiation']])
+    prediction_solar = forecast_inetervalbased_single_node(customer,input_features,data_proxy[['temp','humidity','solarradiation']])
     
     # # adjust solar predictions based on the solarradiation values (making it zero for early morning and late night time steps, and if it is positive)
     prediction_solar.loc[customer.nmi][prediction_solar.loc[customer.nmi] > 0 ] = 0
-    prediction_solar.loc[customer.nmi][add_weather_data_to_customers(prediction_solar.loc[customer.nmi].index,data_weather['solarradiation']) < 50 ] = 0
+    prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
     demand_coeff = np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10))
@@ -1686,7 +1688,7 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
 
 
 
-def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: pd.DataFrame) -> pd.DataFrame:
+def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: pd.DataFrame) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
@@ -1695,7 +1697,7 @@ def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int
     of input preferences generated by the initilase function.
     """
 
-    predictions_prallel = pool_executor_parallel(long_term_load_forecasting_single_node,customers.values(),input_features, data_weather)
+    predictions_prallel = pool_executor_parallel(long_term_load_forecasting_single_node,customers.values(),input_features, data_proxy)
 
     predictions_prallel = pd.concat(predictions_prallel, axis=0)
     predictions_prallel.index.levels[1].freq = predictions_prallel.index.levels[1].inferred_freq
@@ -1703,10 +1705,10 @@ def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int
     return predictions_prallel
 
 
-def long_term_load_forecasting_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_weather: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def long_term_load_forecasting_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
 
-    preds = [long_term_load_forecasting_single_node(customers[i],input_features,data_weather) for i in customers.keys()]
+    preds = [long_term_load_forecasting_single_node(customers[i],input_features,data_proxy) for i in customers.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -1742,7 +1744,7 @@ def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[in
 
     return res_com
 
-def near_cast(customers_nmis: list, forecasters_file_path, new_data, days_to_be_forecasted=None, forecasted_param = None):
+def near_cast(customers_nmis: list, forecasters_file_path, newly_measured_data, days_to_be_forecasted=None, forecasted_param = None):
 
     files_in_dirctory = list(os.listdir(forecasters_file_path))
     forecaster_files = [x[:-7] for x in files_in_dirctory if '.joblib' in x]
@@ -1752,7 +1754,7 @@ def near_cast(customers_nmis: list, forecasters_file_path, new_data, days_to_be_
         if nmi in forecaster_files:
             forecasters[nmi] = load_forecaster_from_file(forecasters_file_path + '/'+ nmi + '.joblib')
         
-    preds = [run_single_near_cast(forecasters[i],new_data.loc[i],forecaster_files,nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param) for i in forecasters.keys()]
+    preds = [run_single_near_cast(forecasters[i],newly_measured_data.loc[i],forecaster_files,nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param) for i in forecasters.keys()]
 
     preds = pd.concat(preds, axis=0)
     preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
@@ -1800,7 +1802,7 @@ def generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_foreca
     return exog_index, steps_to_be_forecasted
      
 
-def run_single_near_cast(forecaster,new_data,forecaster_files,nmi,proxy_measure=None,forecasted_param = None, days_to_be_forecasted=None):
+def run_single_near_cast(forecaster,newly_measured_data,forecaster_files,nmi,proxy_measure=None,forecasted_param = None, days_to_be_forecasted=None):
 
     last_window_index = generate_index_near_cast(forecaster)
     exog_index, steps_to_be_forecasted = generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted)
@@ -1821,30 +1823,34 @@ def run_single_near_cast(forecaster,new_data,forecaster_files,nmi,proxy_measure=
         
         for proxy_name in other_exog_columns:
 
-            if proxy_name in forecaster_files:
+            try:
+
+                if proxy_name in forecaster_files:
+                
+                    pass
             
-                pass
+                elif proxy_name in proxy_measure.columns:
+                        
+                    if exog is None:
+                        exog = proxy_measure.loc[proxy_name].loc[exog_index]
+                    else:
+                        pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
             
-            elif proxy_name in proxy_name.columns:
-                    
-                if exog is None:
-                    exog = proxy_measure.loc[proxy_name].loc[exog_index]
                 else:
-                    pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
-        
-            else:
-                raise ValueError(f'{proxy_name} is provided in the training step but is not provided for the near cast function.')
+                    raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
+            except:
+                raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
 
     if forecasted_param is None:
         forecasted_param = 'active_power'
     
-    if new_data.index.freq == None:
-        new_data.index.freq = new_data.index.inferred_freq 
+    if newly_measured_data.index.freq == None:
+        newly_measured_data.index.freq = newly_measured_data.index.inferred_freq 
     
     result = pd.DataFrame(
                     forecaster.predict(
                         steps = steps_to_be_forecasted,
-                        last_window = new_data.loc[last_window_index][forecasted_param],
+                        last_window = newly_measured_data.loc[last_window_index][forecasted_param],
                         exog = exog) )
     
     result['nmi'] = [nmi] * len(result)
