@@ -22,7 +22,7 @@ import tsprial
 import dateutil
 from dateutil.parser import parse
 from dateutil.parser import ParserError
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, Tuple, List, Any
 import statsmodels.api as sm
 import pytz
 from statsmodels.tools.sm_exceptions import InfeasibleTestError
@@ -1744,7 +1744,7 @@ def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[in
 
     return res_com
 
-def near_cast(customers_nmis: list, forecasters_file_path, newly_measured_data, days_to_be_forecasted=None, forecasted_param = None):
+def near_cast(customers_nmis: list, forecasters_file_path: str, newly_measured_data: pd.DataFrame, days_to_be_forecasted: Union[str, None] = None, forecasted_param: Union[str, None] = None) -> pd.DataFrame:
 
     files_in_dirctory = list(os.listdir(forecasters_file_path))
     forecaster_files = [x[:-7] for x in files_in_dirctory if '.joblib' in x]
@@ -1761,13 +1761,13 @@ def near_cast(customers_nmis: list, forecasters_file_path, newly_measured_data, 
     
     return preds
 
-def generate_index_near_cast(forecaster):
-    
-    return pd.date_range(   start=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size )[0],
-                            end=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size)[-1],
-                            freq= forecaster.last_window.index.inferred_freq)  
+def generate_index_near_cast(forecaster: Any, newly_measured_data: pd.DataFrame) -> pd.DatetimeIndex:
 
-def generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted = None, date_to_be_forecasted = None):
+    return pd.date_range(   start = newly_measured_data.index[-forecaster.window_size],
+                            end = newly_measured_data.index[-1],
+                            freq = forecaster.last_window.index.inferred_freq)  
+
+def generate_index_near_cast_exog(forecaster: Any, last_window_index: pd.DatetimeIndex, days_to_be_forecasted: Union[str, None] = None, date_to_be_forecasted: Union[str, None] = None) -> Tuple[pd.DatetimeIndex,int]:
     
     if days_to_be_forecasted is None:
         
@@ -1795,16 +1795,16 @@ def generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_foreca
     if steps_to_be_forecasted < 0:
         steps_to_be_forecasted = math.floor( ( 24 * 3600)  / pd.to_timedelta(last_window_index.freqstr).total_seconds())
 
-    exog_index =  pd.date_range(   start=(forecaster.last_window.index + forecaster.last_window.index.freq * forecaster.window_size * 2 )[0],
-                            end=  (forecaster.last_window.index + forecaster.last_window.index.freq * steps_to_be_forecasted * 2 )[-1],
-                            freq= forecaster.last_window.index.inferred_freq)        
+    exog_index =  pd.date_range(    start = (last_window_index + forecaster.last_window.index.freq * forecaster.window_size )[0],
+                                    end = (last_window_index+ forecaster.last_window.index.freq * steps_to_be_forecasted )[-1],
+                                    freq = forecaster.last_window.index.inferred_freq)        
     
     return exog_index, steps_to_be_forecasted
      
 
-def run_single_near_cast(forecaster,newly_measured_data,forecaster_files,nmi,proxy_measure=None,forecasted_param = None, days_to_be_forecasted=None):
+def run_single_near_cast(forecaster: Any, newly_measured_data: pd.DataFrame, forecaster_files: List, nmi: str, proxy_measure: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None, days_to_be_forecasted: Union[str, None] = None) -> pd.DataFrame:
 
-    last_window_index = generate_index_near_cast(forecaster)
+    last_window_index = generate_index_near_cast(forecaster, newly_measured_data)
     exog_index, steps_to_be_forecasted = generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted)
 
     exog_columns = forecaster.exog_col_names
