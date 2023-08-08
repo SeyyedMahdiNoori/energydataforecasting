@@ -1744,7 +1744,8 @@ def time_series_cross_validation(number_of_splits: int, customers: Dict[Union[in
 
     return res_com
 
-def near_cast(customers_nmis: list, forecasters_file_path: str, newly_measured_data: pd.DataFrame, days_to_be_forecasted: Union[str, None] = None, forecasted_param: Union[str, None] = None) -> pd.DataFrame:
+def near_cast(customers_nmis: list, forecasters_file_path: str, newly_measured_data: pd.DataFrame, days_to_be_forecasted: Union[str, None] = None,
+            date_to_be_forecasted: Union[str, None] = None, forecasted_param: Union[str, None] = None, run_sequentially: bool = True, proxy_measure: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
 
     files_in_dirctory = list(os.listdir(forecasters_file_path))
     forecaster_files = [x[:-7] for x in files_in_dirctory if '.joblib' in x]
@@ -1753,12 +1754,19 @@ def near_cast(customers_nmis: list, forecasters_file_path: str, newly_measured_d
     for nmi in customers_nmis:
         if nmi in forecaster_files:
             forecasters[nmi] = load_forecaster_from_file(forecasters_file_path + '/'+ nmi + '.joblib')
-        
-    preds = [run_single_near_cast(forecasters[i],newly_measured_data.loc[i],forecaster_files,nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param) for i in forecasters.keys()]
 
-    preds = pd.concat(preds, axis=0)
-    preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
+    if run_sequentially == True:
+        
+        preds = [run_single_near_cast(forecasters, newly_measured_data, forecaster_files, nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param, date_to_be_forecasted = date_to_be_forecasted) for i in forecasters.keys()]
+        preds = pd.concat(preds, axis=0)
+        preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
     
+    else: 
+    
+        predictions_prallel = pool_executor_parallel_near_cast(run_single_near_cast, forecasters, newly_measured_data, forecaster_files, proxy_measure, forecasted_param, days_to_be_forecasted, date_to_be_forecasted)
+        preds = pd.concat(predictions_prallel, axis=0)
+        preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
+
     return preds
 
 def generate_index_near_cast(forecaster: Any, newly_measured_data: pd.DataFrame) -> pd.DatetimeIndex:
@@ -1770,12 +1778,9 @@ def generate_index_near_cast(forecaster: Any, newly_measured_data: pd.DataFrame)
 def generate_index_near_cast_exog(forecaster: Any, last_window_index: pd.DatetimeIndex, days_to_be_forecasted: Union[str, None] = None, date_to_be_forecasted: Union[str, None] = None) -> Tuple[pd.DatetimeIndex,int]:
     
     if days_to_be_forecasted is None:
+                
+        delta = pd.to_datetime(date_to_be_forecasted).tz_localize(last_window_index.tzinfo) - last_window_index[-1]
         
-        if len(date_to_be_forecasted) == 10:
-            delta = datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d') - last_window_index.iloc[0]
-        else:
-            delta = datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d %H:%M:%S') - last_window_index.iloc[0]
-
         try:
             freq_str = pd.to_timedelta(last_window_index.freqstr)
         except Exception:
@@ -1801,62 +1806,75 @@ def generate_index_near_cast_exog(forecaster: Any, last_window_index: pd.Datetim
     
     return exog_index, steps_to_be_forecasted
      
-
-def run_single_near_cast(forecaster: Any, newly_measured_data: pd.DataFrame, forecaster_files: List, nmi: str, proxy_measure: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None, days_to_be_forecasted: Union[str, None] = None) -> pd.DataFrame:
-
-    last_window_index = generate_index_near_cast(forecaster, newly_measured_data)
-    exog_index, steps_to_be_forecasted = generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted)
-
-    exog_columns = forecaster.exog_col_names
-
-    if exog_columns == None:
-        exog = None
-    elif 'minute_sin' in exog_columns:
-        exog = encoding_cyclical_time_features(exog_index)
+def pool_executor_parallel_near_cast(function_name, forecasters: Any, newly_measured_data: pd.DataFrame, forecaster_files: List, proxy_measure: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None, days_to_be_forecasted: Union[str, None] = None, date_to_be_forecasted: Union[str, None] = None):
     
-    try: 
-        other_exog_columns = [x for x in exog_columns if x not in ['minute_sin', 'minute_cos']]
-    except:
-        other_exog_columns =  None
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(function_name,itertools.repeat(forecasters),itertools.repeat(newly_measured_data),itertools.repeat(forecaster_files), list(forecasters.keys()),itertools.repeat(proxy_measure),itertools.repeat(forecasted_param),itertools.repeat(days_to_be_forecasted),itertools.repeat(date_to_be_forecasted))) 
+    return results
 
-    if other_exog_columns is not None:
+
+def run_single_near_cast(forecasters: Any, newly_measured_data_nmi: pd.DataFrame, forecaster_files: List, nmi: str, proxy_measure: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None, days_to_be_forecasted: Union[str, None] = None, date_to_be_forecasted: Union[str, None] = None) -> pd.DataFrame:
+    
+    with threadpool_limits(limits=1, user_api='blas'):
+
+        print("Customer nmi: {nmi}, {precent}%".format(nmi = nmi, precent = round((list(forecasters.keys()).index(nmi) + 1) / len(list(forecasters.keys())) * 100, 1)))
+
+        forecaster = forecasters[nmi]
+        newly_measured_data = newly_measured_data_nmi.loc[nmi]
+
+        last_window_index = generate_index_near_cast(forecaster, newly_measured_data)
+        exog_index, steps_to_be_forecasted = generate_index_near_cast_exog(forecaster,last_window_index,days_to_be_forecasted,date_to_be_forecasted)
+
+        exog_columns = forecaster.exog_col_names
+
+        if exog_columns == None:
+            exog = None
+        elif 'minute_sin' in exog_columns:
+            exog = encoding_cyclical_time_features(exog_index)
         
-        for proxy_name in other_exog_columns:
+        try: 
+            other_exog_columns = [x for x in exog_columns if x not in ['minute_sin', 'minute_cos']]
+        except:
+            other_exog_columns =  None
 
-            try:
+        if other_exog_columns is not None:
+            
+            for proxy_name in other_exog_columns:
 
-                if proxy_name in forecaster_files:
+                try:
+
+                    if proxy_name in forecaster_files:
+                    
+                        pass
                 
-                    pass
-            
-                elif proxy_name in proxy_measure.columns:
-                        
-                    if exog is None:
-                        exog = proxy_measure.loc[proxy_name].loc[exog_index]
+                    elif proxy_name in proxy_measure.columns:
+                            
+                        if exog is None:
+                            exog = proxy_measure.loc[proxy_name].loc[exog_index]
+                        else:
+                            pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
+                
                     else:
-                        pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
-            
-                else:
+                        raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
+                except:
                     raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
-            except:
-                raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
 
-    if forecasted_param is None:
-        forecasted_param = 'active_power'
-    
-    if newly_measured_data.index.freq == None:
-        newly_measured_data.index.freq = newly_measured_data.index.inferred_freq 
-    
-    result = pd.DataFrame(
-                    forecaster.predict(
-                        steps = steps_to_be_forecasted,
-                        last_window = newly_measured_data.loc[last_window_index][forecasted_param],
-                        exog = exog) )
-    
-    result['nmi'] = [nmi] * len(result)
-    result.rename_axis('datetime',inplace = True)
-    result.set_index('nmi',append = True,inplace=True)
-    result = result.swaplevel()
-
-    return result
+        if forecasted_param is None:
+            forecasted_param = 'active_power'
         
+        if newly_measured_data.index.freq == None:
+            newly_measured_data.index.freq = newly_measured_data.index.inferred_freq 
+        
+        result = pd.DataFrame(
+                        forecaster.predict(
+                            steps = steps_to_be_forecasted,
+                            last_window = newly_measured_data.loc[last_window_index][forecasted_param],
+                            exog = exog) )
+        
+        result['nmi'] = [nmi] * len(result)
+        result.rename_axis('datetime',inplace = True)
+        result.set_index('nmi',append = True,inplace=True)
+        result = result.swaplevel()
+
+        return result
+                
