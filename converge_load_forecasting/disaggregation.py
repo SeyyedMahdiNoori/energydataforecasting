@@ -14,7 +14,7 @@ from dateutil.parser import ParserError
 
 from typing import Union, Dict, Tuple, List
 
-from converge_load_forecasting import Customers, add_weather_data_to_customers
+from converge_load_forecasting import Customers, prepare_proxy_data_for_training
 
 # Warnings configuration
 # ==============================================================================
@@ -346,7 +346,7 @@ def SDD_using_temp_single_node(customer,datetimes,data_weather,input_features):
 
     print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
-    weather_input = add_weather_data_to_customers(customer.data.loc[datetimes].index,data_weather)
+    weather_input = prepare_proxy_data_for_training(customer.data.loc[datetimes].index,data_weather)
     pv_dis = - customer.data[input_features["Forecasted_param"]].loc[datetimes].clip(upper = 0)
     load_dis = customer.data.active_power[datetimes] + pv_dis
 
@@ -422,7 +422,7 @@ def SDD_known_pvs_temp_single_node_algorithm(customer,datetimes,data_weather,inp
     
     print("Customer nmi: {nmi}, {precent}%".format(nmi = customer.nmi, precent = round((Customers.instances.index(customer.nmi) + 1) / len(Customers.instances) * 100, 1)))
 
-    weather_input = add_weather_data_to_customers(customer.data.loc[datetimes].index,data_weather)    
+    weather_input = prepare_proxy_data_for_training(customer.data.loc[datetimes].index,data_weather)    
     
     pv_iter0 = - customer.data[input_features["Forecasted_param"]].loc[datetimes].clip(upper = 0)
 
