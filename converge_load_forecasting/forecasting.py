@@ -12,8 +12,6 @@ import datetime
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 import multiprocess as mp
-from pyomo.environ import NonNegativeReals, ConcreteModel, Var, Objective, Set, Constraint
-from pyomo.opt import SolverFactory
 import tqdm
 from functools import partialmethod
 import itertools
@@ -27,7 +25,6 @@ import statsmodels.api as sm
 import pytz
 from statsmodels.tools.sm_exceptions import InfeasibleTestError
 import xgboost
-import sys
 import math
 import mapie
 from threadpoolctl import threadpool_limits
@@ -202,7 +199,7 @@ def load_forecaster_from_file(filepath):
     loaded_forecaster = joblib.load(filepath)
     return loaded_forecaster
 
-def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: Dict) -> Tuple[str, str, str, str, pd.DataFrame, str, int]:
+def fill_input_dates_per_customer(data: pd.DataFrame, input_features: Dict) -> Tuple[str, str, str, str, pd.DataFrame, str, int]:
     '''
     fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: Dict) -> Tuple[str, str, str, str, pd.DataFrame, str, int]
     
@@ -212,11 +209,10 @@ def fill_input_dates_per_customer(customer_data: pd.DataFrame, input_features: D
     '''
 
     # Data forequency.
-    if customer_data.index.freq == None:
-        data = fill_in_missing_data(customer_data)
+    if data.index.freq == None:
+        data = fill_in_missing_data(data)
     else:
-        data = customer_data
-        data.index.freq = customer_data.index.inferred_freq
+        data.index.freq = data.index.inferred_freq
 
     # The datetime index that training starts from
     if input_features['start_training'] is None:
@@ -712,11 +708,8 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         except Exception:
             raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
 
-        # # Add weekday column to the data
-        # data['DayofWeek'] = data['datetime'].dt.day_name()
-
         # Save customer nmis in a list
-        customers_nmi = list(dict.fromkeys(list(data['nmi'].values)))
+        customers_nmi = list(data['nmi'].unique())
 
         # Make datetime index of the dataset
         data.set_index(['nmi', 'datetime'], inplace=True)
