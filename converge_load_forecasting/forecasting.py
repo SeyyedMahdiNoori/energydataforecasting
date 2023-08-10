@@ -1144,7 +1144,7 @@ def check_corr_cause_proxy_customer(hist_data_proxy_customers : Dict[Union[int,s
     corr = corr.fillna(0)
     corr.sort_values(ascending=False,inplace=True)
 
-    corr = corr.head(min(3*number_of_proxy_customers,len(hist_data_proxy_customers.keys())))
+    corr = corr.head(min(number_of_proxy_customers,len(hist_data_proxy_customers.keys())))
     cus_rep = cus_rep[corr.to_dict()]
 
     for i in cus_rep.columns:
@@ -1423,7 +1423,7 @@ def forecast_mixed_type_customers(customers: Dict[Union[int,str],Customers],
 
 
     if number_of_proxy_customers is None:
-        number_of_proxy_customers = min(30,len(participants))
+        number_of_proxy_customers = min(10,len(participants))
 
     hist_data_proxy_customers = {i: customers_partipant[i] for i in list(customers_partipant.keys())[0:number_of_proxy_customers]}
     
@@ -1757,7 +1757,7 @@ def near_cast(customers_nmis: list, forecasters_file_path: str, newly_measured_d
 
     if run_sequentially == True:
         
-        preds = [run_single_near_cast(forecasters, newly_measured_data, forecaster_files, nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param, date_to_be_forecasted = date_to_be_forecasted) for i in forecasters.keys()]
+        preds = [run_single_near_cast(forecasters, newly_measured_data, forecaster_files, nmi = i, days_to_be_forecasted = days_to_be_forecasted, forecasted_param = forecasted_param, date_to_be_forecasted = date_to_be_forecasted, proxy_measure = proxy_measure) for i in forecasters.keys()]
         preds = pd.concat(preds, axis=0)
         preds.index.levels[1].freq = preds.index.levels[1].inferred_freq
     
@@ -1842,20 +1842,12 @@ def run_single_near_cast(forecasters: Any, newly_measured_data_nmi: pd.DataFrame
             for proxy_name in other_exog_columns:
 
                 try:
-
-                    if proxy_name in forecaster_files:
-                    
-                        pass
-                
-                    elif proxy_name in proxy_measure.columns:
-                            
-                        if exog is None:
-                            exog = proxy_measure.loc[proxy_name].loc[exog_index]
-                        else:
-                            pd.concat([exog,proxy_measure.loc[proxy_name].loc[exog_index]], axis = 1)
-                
+    
+                    if exog is None:
+                        exog = proxy_measure.loc[proxy_name].reindex(exog_index, fill_value=0)
                     else:
-                        raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
+                        exog = pd.concat([exog,(proxy_measure.loc[proxy_name].reindex(exog_index, fill_value=0)).rename(columns={'pred': proxy_name})], axis = 1)
+                
                 except:
                     raise ValueError(f'{proxy_name} is used in the training step but is not provided for the near cast function.')
 
@@ -1877,4 +1869,19 @@ def run_single_near_cast(forecasters: Any, newly_measured_data_nmi: pd.DataFrame
         result = result.swaplevel()
 
         return result
-                
+            
+def near_cast_mixed(participants: list, non_participants: list, forecasters_file_path: str, newly_measured_data: pd.DataFrame, days_to_be_forecasted: Union[str, None] = None,
+                    date_to_be_forecasted: Union[str, None] = None, forecasted_param: Union[str, None] = None, run_sequentially: bool = True,
+                    proxy_measure: Union[pd.DataFrame, None] = None) -> Tuple[pd.DataFrame,pd.DataFrame]:
+
+    print("forecast participants ...")
+    pred_participants =  near_cast(participants, forecasters_file_path, newly_measured_data, days_to_be_forecasted,
+                             date_to_be_forecasted, forecasted_param,
+                             run_sequentially, proxy_measure)
+    
+    print("forecast non-participants ...")
+    pred_non_participants =  near_cast(non_participants, forecasters_file_path, newly_measured_data, days_to_be_forecasted,
+                             date_to_be_forecasted, forecasted_param,
+                             run_sequentially, proxy_measure = pred_participants)
+    
+    return pred_participants, pred_non_participants
