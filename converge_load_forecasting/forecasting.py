@@ -641,6 +641,227 @@ class Initialise_output:
 #                 self.customers_nmi = customers_nmi
 #                 self.datetimes = datetimes
 
+def read_data(customersdatapath: Union[str, None], raw_data: Union[pd.DataFrame, None]) -> pd.DataFrame:
+
+    # Read data
+    if customersdatapath is not None:
+        data: pd.DataFrame = pd.read_csv(customersdatapath)     
+    elif raw_data is not None:
+        data = raw_data
+    # elif db_url is not None and db_table_names is not None:
+    #     sql = [f"SELECT * from {table}" for table in db_table_names]
+    #     data = cx.read_sql(db_url,sql)
+    #     data.sort_values(by='datetime',inplace=True)
+    else:
+        raise ValueError('Either customersdatapath, raw_data or db_url needs to be provided')
+        
+    # # ###### Pre-process the data ######
+    # format datetime to pandas datetime format
+    try:
+        check_time_zone = has_timezone(data.datetime[0])
+    except AttributeError:
+        raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+
+    return data
+
+def input_features_time_zone(time_zone: Union[str, None]) -> str:
+    if time_zone is None:
+        time_zone = 'Australia/Sydney'
+    elif time_zone not in pytz.all_timezones:
+        raise ValueError(f"{time_zone} is NOT a valid time zone. only timezone that are in pytz.all_timezones are accpeted.")
+
+    return time_zone
+
+def format_datetime(check_time_zone: bool, data: pd.DataFrame, input_features: Dict) -> pd.DataFrame:
+    try:
+        if check_time_zone == False:
+            data['datetime'] = pd.to_datetime(data['datetime'])
+        else:
+            data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+    except Exception:
+        raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
+    
+    return data
+
+def read_proxy_data(proxydatapath: Union[str, None], raw_proxy_data: Union[pd.DataFrame, None], input_features: Dict) -> Union[pd.DataFrame, None]:
+
+    if proxydatapath is None and raw_proxy_data is None:
+        data_proxy: Union[pd.DataFrame, None] = None
+    elif proxydatapath is not None:
+        raw_proxy_data = pd.read_csv(proxydatapath)
+        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+    else:
+        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+    
+    return data_proxy
+
+def input_features_forecast_param(forecasted_param: Union[None,str], columns: pd.core.indexes.base.Index) -> str:
+    
+    if forecasted_param is None:
+        if 'active_power' in columns:
+            forecasted_param = 'active_power'
+        else:
+            raise ValueError('forecasted_param needs to be provided or the input data should have a column name "active_power".')
+    if forecasted_param not in columns:
+        raise ValueError('forecasted_param is not in the data')
+        
+    return forecasted_param
+
+def input_features_training_dates(training_dates: Union[str,None]) -> str:
+
+    if training_dates is None:
+        pass
+    elif len(training_dates) == 10:
+        try:
+            datetime.datetime.strptime(training_dates,'%Y-%m-%d')
+            training_dates = training_dates + ' ' + '00:00:00'
+        except ValueError:
+            raise ValueError(f"{training_dates} is NOT a valid date string.")
+    elif len(training_dates) == 19:
+        try:
+            datetime.datetime.strptime(training_dates,'%Y-%m-%d %H:%M:%S')
+
+        except ValueError:
+            raise ValueError(f"{training_dates} is NOT a valid date string.")
+    else:
+        raise ValueError(f'{training_dates} does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+    
+    return training_dates
+
+def input_features_window_size(window_size: Union[str,None]) -> str:
+
+    if window_size is None:
+        pass
+    elif type(window_size) == int:
+        input_features['window_size'] = window_size
+    else:
+        raise ValueError('window size should be an integer')
+    
+    return window_size
+
+def input_features_date_and_days_to_be_forecasted(days_to_be_forecasted: Union[None,str], date_to_be_forecasted: Union[None,str]) -> Tuple[str,str]:
+
+    if days_to_be_forecasted is not None and date_to_be_forecasted is not None:
+        raise ValueError('Only of the days_to_be_forecasted or date_to_be_forecasted should be given')
+
+    elif days_to_be_forecasted is None and date_to_be_forecasted is None:     
+        days_to_be_forecasted = 1
+
+    elif type(days_to_be_forecasted) ==  int:
+        pass
+        
+    elif type(date_to_be_forecasted) ==  str:
+        
+        days_to_be_forecasted = None
+
+        date_to_be_forecasted = input_features_training_dates(date_to_be_forecasted)
+    
+    return days_to_be_forecasted, date_to_be_forecasted 
+
+def input_features_core_usage(core_usage: Union[None,str]):
+    
+    if core_usage is None:
+        core_usage = 8
+    elif type(core_usage) == int:
+        pass
+    else:
+        raise TypeError('Core usage should be an integer')
+
+    return core_usage
+
+    
+def input_features_regressor_input(regressor: Union[None,str]) -> str:
+    
+    if regressor is None:
+        regressor = 'LinearRegression'
+    elif regressor == 'LinearRegression' or regressor == 'XGBoost' or regressor == 'RandomForest':
+        pass
+    else:
+        raise ValueError(f"{regressor} is NOT a valid regressor. The regressor should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
+    
+    return regressor
+
+def input_features_loss_function(loss_function: Union[None,str]) -> str:
+
+    if loss_function is None:
+        loss_function = 'ridge'
+    elif loss_function == 'ridge' or loss_function == 'lasso' or loss_function == 'MSE':
+        pass
+    else:
+        raise ValueError(f"{loss_function} is NOT a valid loss function. The loss_function should be 'ridge' or 'lasso' or 'MSE'.")
+    
+    return loss_function
+
+def input_features_regressor(regressor: Union[None,str], loss_function: Union[None,str]) -> sklearn.pipeline.Pipeline:
+
+    regressor = input_features_regressor_input(regressor=regressor)
+
+    loss_function = input_features_loss_function(loss_function=loss_function)
+
+    return select_regressor(regressor,select_loss_function(loss_function))
+
+
+def input_features_time_proxy(time_proxy: Union[None,bool]) -> bool:
+    
+    if time_proxy is None or time_proxy == False:
+        time_proxy = False
+    elif time_proxy == True:
+        pass
+    else:
+        raise TypeError(f"{time_proxy} is NOT valid. It should be True or False.")
+    
+    return time_proxy
+
+
+def input_features_algorithm(algorithm: Union[None,str]) -> str:
+
+    if algorithm is None:
+        algorithm = 'iterated'
+    elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking' or algorithm == 'prophet':
+        pass
+    else:
+        raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified' or 'prophet'.")
+
+    return algorithm
+
+
+def input_features_run_sequentially(run_sequentially: Union[None,bool]) -> bool:
+
+    if run_sequentially is None or run_sequentially == False:
+        run_sequentially = False
+    elif run_sequentially == True:
+        pass
+    else:
+        raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
+
+def input_features_probabilistic_algorithm(probabilistic_algorithm: Union[None,str]) -> Tuple[str,None]:
+
+    if probabilistic_algorithm is None or probabilistic_algorithm == 'bootstrap' or probabilistic_algorithm == 'jackknife':
+        pass
+    else:
+        raise TypeError(f"{probabilistic_algorithm} is NOT valid. It should be 'bootstrap'  or 'jackknife' or left blank.")
+
+    return probabilistic_algorithm
+
+def input_features_save_forecaster_path(save_forecaster_path: Union[None,str], save_forecaster: Union[None,bool]) -> Tuple[str,None]:
+
+    if save_forecaster_path is None:
+        if save_forecaster is None or save_forecaster == False:
+            save_forecaster_path = None
+        elif save_forecaster == True:
+            if os.path.exists('./forecaster_files') == False:
+                os.makedirs('./forecaster_files')
+            save_forecaster_path = './forecaster_files'
+        else:
+            raise ValueError(f"save_forecaster is {save_forecaster} instead of a Boolean input")
+    else:
+        if os.path.exists(save_forecaster_path) == True:
+            pass 
+        else:
+            raise ValueError(f"{save_forecaster_path} does not exists save_forecaster is given something other than True")
+
+    return save_forecaster_path
+
 # # ================================================================
 # # Initialise the user preferences and pre-porcess the input data
 # # ================================================================
@@ -670,19 +891,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
     try:
         # Read data
-        if customersdatapath is not None:
-            data: pd.DataFrame = pd.read_csv(customersdatapath)     
-        elif raw_data is not None:
-            data = raw_data
-        # elif db_url is not None and db_table_names is not None:
-        #     sql = [f"SELECT * from {table}" for table in db_table_names]
-        #     data = cx.read_sql(db_url,sql)
-        #     data.sort_values(by='datetime',inplace=True)
-        else:
-            raise ValueError('Either customersdatapath, raw_data or db_url needs to be provided')
+        data = read_data(customersdatapath=customersdatapath, raw_data=raw_data)
             
         # # ###### Pre-process the data ######
-        # format datetime to pandas datetime format
         try:
             check_time_zone = has_timezone(data.datetime[0])
         except AttributeError:
@@ -693,20 +904,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         # defeault values will be used to fill in the gap. 
         input_features: Dict[str, Union[str, bytes, bool, int, float, pd.Timestamp]] = {}
 
-        if time_zone is None:
-            input_features['time_zone'] = 'Australia/Sydney'
-        elif time_zone not in pytz.all_timezones:
-            raise ValueError(f"{time_zone} is NOT a valid time zone. only timezone that are in pytz.all_timezones are accpeted.")
-        else:
-            input_features['time_zone'] = time_zone
-
-        try:
-            if check_time_zone == False:
-                data['datetime'] = pd.to_datetime(data['datetime'])
-            else:
-                data['datetime'] = pd.to_datetime(data['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
-        except Exception:
-            raise ValueError('data.datetime should be a string that can be meaningfully changed to time.')
+        input_features['time_zone'] = input_features_time_zone(time_zone=time_zone)
+        
+        # format datetime to pandas datetime format
+        data = format_datetime(check_time_zone=check_time_zone, data=data, input_features=input_features)
 
         # Save customer nmis in a list
         customers_nmi = list(data['nmi'].unique())
@@ -718,189 +919,51 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
 
         # read and process proxy data if it has been inputted
-        if proxydatapath is None and raw_proxy_data is None:
-            data_proxy: Union[pd.DataFrame, None] = None
-        elif proxydatapath is not None:
-            raw_proxy_data = pd.read_csv(proxydatapath)
-            data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
-        else:
-            data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+        data_proxy = read_proxy_data(proxydatapath=proxydatapath, raw_proxy_data=raw_proxy_data, input_features=input_features)
 
-        # The parameters to be forecasted. It should be a column name in the input data.
-        if forecasted_param is None:
-            if 'active_power' in data.columns:
-                input_features['Forecasted_param'] = 'active_power'
-            else:
-                raise ValueError('forecasted_param needs to be provided or the input data should have a column name "active_power".')
-        elif forecasted_param in data.columns:
-            input_features['Forecasted_param'] = forecasted_param
-        else:
-            raise ValueError('forecasted_param is not in the data')
+        # The parameter to be forecasted. It should be a column name in the input data.
+        input_features['Forecasted_param'] = input_features_forecast_param(forecasted_param=forecasted_param, columns=data.columns)
 
         # The datetime index that training starts from
-        if start_training is None:
-            input_features['start_training'] = None
-        elif len(start_training) == 10:
-            try:
-                datetime.datetime.strptime(start_training,'%Y-%m-%d')
-                input_features['start_training'] = start_training + ' ' + '00:00:00'
-            except ValueError:
-                raise ValueError(f"{start_training} is NOT a valid date string.")
-        elif len(start_training) == 19:
-            try:
-                datetime.datetime.strptime(start_training,'%Y-%m-%d %H:%M:%S')
-                input_features['start_training'] = start_training
-            except ValueError:
-                raise ValueError(f"{start_training} is NOT a valid date string.")
-        else:
-            raise ValueError('start_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-
-        # The last datetime index used for trainning.
-        if end_training is None:
-            input_features['end_training'] = None
-        elif len(end_training) == 10:
-            try:
-                datetime.datetime.strptime(end_training,'%Y-%m-%d')
-                input_features['end_training'] = end_training + ' ' + '00:00:00'
-            except ValueError:
-                raise ValueError(f"{end_training} is NOT a valid date string.")
-        elif len(end_training) == 19:
-            try:
-                datetime.datetime.strptime(end_training,'%Y-%m-%d %H:%M:%S')
-                input_features['end_training'] = end_training
-            except ValueError:
-                raise ValueError(f"{end_training} is NOT a valid date string.")
-        else:
-            raise ValueError('end_training does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
-
-        # The last obersved window. The forecasting values are generated after this time index.
+        input_features['start_training'] = input_features_training_dates(training_dates=start_training)
+        input_features['end_training'] = input_features_training_dates(training_dates=end_training)
+        
         if last_observed_window is None:
             input_features['last_observed_window'] = input_features['end_training']
-        elif len(last_observed_window) == 10:
-            try:
-                datetime.datetime.strptime(last_observed_window,'%Y-%m-%d')
-                input_features['last_observed_window'] = last_observed_window + ' ' + '00:00:00'
-            except ValueError:
-                raise ValueError(f"{last_observed_window} is NOT a valid date string.")
-        elif len(last_observed_window) == 19:
-            try:
-                datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
-                input_features['last_observed_window'] = last_observed_window
-            except ValueError:
-                raise ValueError(f"{last_observed_window} is NOT a valid date string.")
-        else:
-            raise ValueError('last_observed_window does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" or simply left blanck.')
+        else: 
+            input_features['last_observed_window'] = input_features_training_dates(training_dates=last_observed_window)
 
         # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
         # For example, for a data with resolution 30th minutely, the window size woul be 48.
-        if window_size is None:
-            input_features['window_size'] = None
-        elif type(window_size)==int:
-            input_features['window_size'] = window_size
-        else:
-            raise ValueError('window size should be an integer')
+        input_features['window_size'] = input_features_window_size(window_size=window_size)
 
         # The number of days to be forecasted.
-        if days_to_be_forecasted is not None and date_to_be_forecasted is not None:
-            raise ValueError('Only of the days_to_be_forecasted or date_to_be_forecasted should be given')
-
-        elif days_to_be_forecasted is None and date_to_be_forecasted is None:     
-            input_features['days_to_be_forecasted'] = 1
-
-        elif type(days_to_be_forecasted) ==  int:
-            input_features['days_to_be_forecasted'] = days_to_be_forecasted
-            
-        elif type(date_to_be_forecasted) ==  str:
-            
-            input_features['days_to_be_forecasted'] = None
-
-            if len(date_to_be_forecasted) == 10:
-                try:
-                    datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d')
-                    input_features['date_to_be_forecasted'] = date_to_be_forecasted
-                except ValueError:
-                    raise ValueError(f"{date_to_be_forecasted} is NOT a valid date string.")
-            elif len(date_to_be_forecasted) == 19:
-                try:
-                    datetime.datetime.strptime(date_to_be_forecasted,'%Y-%m-%d %H:%M:%S')
-                    input_features['date_to_be_forecasted'] = date_to_be_forecasted
-                except ValueError:
-                    raise ValueError(f"{date_to_be_forecasted} is NOT a valid date string.")
-            else:
-                raise ValueError('date_to_be_forecasted does not have a correct format. It should be an string in "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S" ')
-
-        else:
-            raise ValueError('date_to_be_forecasted should be a str or days_to_be_forecasted should be an int')
+        input_features['days_to_be_forecasted'], input_features['date_to_be_forecasted'] = input_features_date_and_days_to_be_forecasted(days_to_be_forecasted=days_to_be_forecasted, date_to_be_forecasted=date_to_be_forecasted)
 
         # number of processes parallel programming.
-        if core_usage is None:
-            input_features['core_usage'] = 40
-        elif type(core_usage) == int:
-            input_features['core_usage'] = core_usage
-        else:
-            raise TypeError('Core usage should be an integer')
+        input_features['core_usage'] = input_features_core_usage(core_usage=core_usage)
 
-        if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and  data[input_features['Forecasted_param']].dtype != int):
+        # Check if the data is in the write formate for forecasting
+        if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and data[input_features['Forecasted_param']].dtype != int):
             print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
 
-        if regressor is None:
-            regressor = 'LinearRegression'
-        elif regressor == 'LinearRegression' or regressor == 'XGBoost' or regressor == 'RandomForest':
-            pass
-        else:
-            raise ValueError(f"{regressor} is NOT a valid regressor. The regressor should be 'LinearRegression', 'XGBoost' or 'RandomForest'.")
+        # Select loss regressor
+        input_features['regressor'] = input_features_regressor(regressor=regressor, loss_function=loss_function)
+
+        # Select whether to use time as proxy or not
+        input_features['time_proxy'] = input_features_time_proxy(time_proxy=time_proxy)
+
+        # Select a multi-step algorithm
+        input_features['algorithm'] = input_features_algorithm(algorithm=algorithm)
         
-        if loss_function is None:
-            loss_function = 'ridge'
-        elif loss_function == 'ridge' or loss_function == 'lasso' or loss_function == 'MSE':
-            pass
-        else:
-            raise ValueError(f"{loss_function} is NOT a valid loss function. The loss_function should be 'ridge' or 'lasso' or 'MSE'.")
+        # Select whether to run the forecastin functions sequentially or parallelly
+        input_features['run_sequentially'] = input_features_run_sequentially(run_sequentially=run_sequentially)
+        
+        # Select the probablictis 
+        input_features['probabilistic_algorithm'] = input_features_probabilistic_algorithm(probabilistic_algorithm=probabilistic_algorithm)
 
-        input_features['regressor'] = select_regressor(regressor,select_loss_function(loss_function))
-
-        if time_proxy is None or time_proxy == False:
-            input_features['time_proxy'] = False
-        elif time_proxy == True:
-            input_features['time_proxy'] = time_proxy
-        else:
-            raise TypeError(f"{time_proxy} is NOT valid. It should be True or False.")
-
-        if algorithm is None:
-            input_features['algorithm'] = 'iterated'
-        elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking' or algorithm == 'prophet':
-            input_features['algorithm'] = algorithm
-        else:
-            raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified' or 'prophet'.")
-
-        if run_sequentially is None or run_sequentially == False:
-            input_features['run_sequentially'] = False
-        elif run_sequentially == True:
-            input_features['run_sequentially'] = True
-        else:
-            raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
-
-        if probabilistic_algorithm is None:
-            input_features['probabilistic_algorithm'] = None
-        elif probabilistic_algorithm == 'bootstrap' or probabilistic_algorithm == 'jackknife':
-            input_features['probabilistic_algorithm'] = probabilistic_algorithm
-        else:
-            raise TypeError(f"{probabilistic_algorithm} is NOT valid. It should be 'bootstrap'  or 'jackknife' or left blank.")
-
-        if save_forecaster_path is None:
-            if save_forecaster is None or save_forecaster == False:
-                input_features['save_forecaster_path'] = None
-            elif save_forecaster == True:
-                if os.path.exists('./forecaster_files') == False:
-                    os.makedirs('./forecaster_files')
-                input_features['save_forecaster_path'] = './forecaster_files'
-            else:
-                raise ValueError(f"save_forecaster is {save_forecaster} instead of a Boolean input")
-        else:
-            if os.path.exists(save_forecaster_path) == True:
-                input_features['save_forecaster_path'] = save_forecaster_path 
-            else:
-                raise ValueError(f"{save_forecaster_path} does not exists save_forecaster is given something other than True")
+        # Select if the forecaster is to be saved and its direcotry
+        input_features['save_forecaster_path'] = input_features_save_forecaster_path(save_forecaster_path=save_forecaster_path,save_forecaster=save_forecaster)
 
         # A dictionary of all the customers with keys being customers_nmi and values being their associated Customers (which is a class) instance.
         customers = {customer: Customers(customer,data,input_features) for customer in customers_nmi}
