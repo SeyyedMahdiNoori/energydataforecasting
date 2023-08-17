@@ -683,15 +683,15 @@ def format_datetime(check_time_zone: bool, data: pd.DataFrame, input_features: D
     
     return data
 
-def read_proxy_data(proxydatapath: Union[str, None], raw_proxy_data: Union[pd.DataFrame, None], input_features: Dict) -> Union[pd.DataFrame, None]:
+def read_proxy_data(proxydatapath: Union[str, None], raw_proxy_data: Union[pd.DataFrame, None], input_features: Dict, tzinfo: Union[str, None] ) -> Union[pd.DataFrame, None]:
 
     if proxydatapath is None and raw_proxy_data is None:
         data_proxy: Union[pd.DataFrame, None] = None
     elif proxydatapath is not None:
         raw_proxy_data = pd.read_csv(proxydatapath)
-        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = tzinfo)
     else:
-        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = data.index.levels[1].tzinfo)
+        data_proxy = proxy_input_data_cleaner(raw_proxy_data = raw_proxy_data, input_features = input_features, tzinfo = tzinfo)
     
     return data_proxy
 
@@ -730,10 +730,8 @@ def input_features_training_dates(training_dates: Union[str,None]) -> str:
 
 def input_features_window_size(window_size: Union[str,None]) -> str:
 
-    if window_size is None:
+    if window_size is None or type(window_size) == int:
         pass
-    elif type(window_size) == int:
-        input_features['window_size'] = window_size
     else:
         raise ValueError('window size should be an integer')
     
@@ -919,7 +917,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         datetimes: pd.DatetimeIndex  = pd.DatetimeIndex(data.index.unique('datetime')).sort_values()
 
         # read and process proxy data if it has been inputted
-        data_proxy = read_proxy_data(proxydatapath=proxydatapath, raw_proxy_data=raw_proxy_data, input_features=input_features)
+        data_proxy = read_proxy_data(proxydatapath=proxydatapath, raw_proxy_data=raw_proxy_data, input_features=input_features, tzinfo=data.index.levels[1].tzinfo)
 
         # The parameter to be forecasted. It should be a column name in the input data.
         input_features['Forecasted_param'] = input_features_forecast_param(forecasted_param=forecasted_param, columns=data.columns)
