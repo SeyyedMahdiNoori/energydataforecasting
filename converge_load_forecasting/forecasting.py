@@ -63,6 +63,9 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
     This function accepts a pd.DatetimeIndex varibale and returns a pd.DataFrame with two columns. The output can be used to encode cyclical time features trigonometric functions.
     '''
 
+    if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
+        raise TypeError("time_series_data_index must be a pandas DatetimeIndex") 
+
     exog_time = pd.DataFrame({'datetime': time_series_data_index})
     exog_time = exog_time.set_index(time_series_data_index)
     
@@ -74,28 +77,28 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
 
     return exog_time
 
-def prepare_proxy_data_for_training(time_series_data_index, data_proxy):
-
-    try:
-        data_proxy_freq_int = int(data_proxy.index.freqstr[:-1])
-    except Exception:
-        if data_proxy.index.freqstr == 'H':
-            data_proxy_freq_int = 60
-        elif data_proxy.index.freqstr == 'T':
-            data_proxy_freq_int = 1
-        elif data_proxy.index.freqstr == 'D':
-            data_proxy_freq_int = 1440
+def data_frequency_in_minutes(time_series_data_index: pd.DatetimeIndex) -> int:
+    
+    if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
+        raise TypeError("time_series_data_index must be a pandas DatetimeIndex") 
     
     try:
-       time_series_data_freq_int = int(time_series_data_index.freqstr[:-1])
-    except Exception:
-        if time_series_data_index.freqstr == 'H':
-            time_series_data_freq_int = 60
-        elif time_series_data_index.freqstr == 'T':
-            time_series_data_freq_int = 1
-        elif time_series_data_index.freqstr == 'D':
-            time_series_data_freq_int = 1440
+        return pd.Timedelta(time_series_data_index.freqstr).total_seconds()/60
+    except ValueError:
+        return pd.Timedelta('1' + time_series_data_index.freqstr).total_seconds()/60 
 
+def prepare_proxy_data_for_training(time_series_data_index: pd.DatetimeIndex, data_proxy: pd.DataFrame) -> pd.DataFrame:
+
+    if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
+        raise TypeError("time_series_data_index must be a pandas DatetimeIndex")
+    elif type(data_proxy) is not pd.DataFrame:
+        raise TypeError("data_proxy must be a pandas DataFrame")
+    
+    # check the frequncy of the time_series and the data_proxy
+    data_proxy_freq_int = data_frequency_in_minutes(data_proxy.index)
+    time_series_data_freq_int = data_frequency_in_minutes(time_series_data_index)
+
+    # Get the data_proxy to have the same frequncy as the time_series and fill the missing values.
     if data_proxy_freq_int ==  time_series_data_freq_int:
         exog_proxy = data_proxy.loc[time_series_data_index[0]:time_series_data_index[-1]]
     elif data_proxy_freq_int <  time_series_data_freq_int:
@@ -655,13 +658,6 @@ def read_data(customersdatapath: Union[str, None], raw_data: Union[pd.DataFrame,
     else:
         raise ValueError('Either customersdatapath, raw_data or db_url needs to be provided')
         
-    # # ###### Pre-process the data ######
-    # format datetime to pandas datetime format
-    try:
-        check_time_zone = has_timezone(data.datetime[0])
-    except AttributeError:
-        raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
-
     return data
 
 def input_features_time_zone(time_zone: Union[str, None]) -> str:
@@ -831,6 +827,8 @@ def input_features_run_sequentially(run_sequentially: Union[None,bool]) -> bool:
         pass
     else:
         raise TypeError(f"{run_sequentially} is NOT valid. It should be either True or False")
+    
+    return run_sequentially
 
 def input_features_probabilistic_algorithm(probabilistic_algorithm: Union[None,str]) -> Tuple[str,None]:
 
@@ -859,6 +857,20 @@ def input_features_save_forecaster_path(save_forecaster_path: Union[None,str], s
             raise ValueError(f"{save_forecaster_path} does not exists save_forecaster is given something other than True")
 
     return save_forecaster_path
+
+def check_data_nmi_datetime(data: pd.DataFrame) -> Tuple[bool,pd.DataFrame]:
+
+    try:
+        check_time_zone = has_timezone(data.datetime[0])
+    except AttributeError:
+        raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+
+    if 'nmi' not in data.columns:
+        data['nmi'] = ['1'] * len(data)
+
+    return check_time_zone, data
+
+
 
 # # ================================================================
 # # Initialise the user preferences and pre-porcess the input data
@@ -892,10 +904,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         data = read_data(customersdatapath=customersdatapath, raw_data=raw_data)
             
         # # ###### Pre-process the data ######
-        try:
-            check_time_zone = has_timezone(data.datetime[0])
-        except AttributeError:
-            raise ValueError('Input data is not the correct format. It should have a column with "datetime", a column with name "nmi" and at least one more column which is going to be forecasted')
+        check_time_zone, data = check_data_nmi_datetime(data=data)
 
         # create and populate input_features which is a paramter that will be used in almost all the functions in this package.
         # This paramtere represent the input preferenes. If there is no input to the initial() function to fill this parameters,
