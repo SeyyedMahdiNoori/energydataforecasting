@@ -272,8 +272,10 @@ def fill_input_dates_per_customer(data: pd.DataFrame, input_features: Dict) -> T
     # data frequency
     data_freq = data.index.inferred_freq
 
-    if start_training > end_training  or last_observed_window < end_training :
-            raise ValueError('Start training, end training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
+    if start_training >= end_training:
+        raise ValueError('Start training and end training do not match the input data. Left them blank in case not sure about the source of the problem.')
+    if last_observed_window < end_training:
+        raise ValueError('End training or last observed window do not match the input data. Left them blank in case not sure about the source of the problem.')
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
 
@@ -880,9 +882,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
                 proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, last_observed_window: Union[str, None] = None,
                 window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
-                core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None, loss_function: Union[str, None] = None,
-                time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None, run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
-                time_zone: Union[str, None] = None, save_forecaster_path: Union[str, None] = None, save_forecaster: Union[str, None] = None ) -> Union[Initialise_output,None]: 
+                core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None,
+                loss_function: Union[str, None] = None, time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None,
+                run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
+                time_zone: Union[str, None] = None, save_forecaster_path: Union[str, None] = None, save_forecaster: Union[bool, None] = None ) -> Union[Initialise_output,None]: 
     '''
     initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
@@ -951,8 +954,10 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         input_features['core_usage'] = input_features_core_usage(core_usage=core_usage)
 
         # Check if the data is in the write formate for forecasting
-        if data[input_features['Forecasted_param']].isna().any() == True or (data[input_features['Forecasted_param']].dtype != float and data[input_features['Forecasted_param']].dtype != int):
-            print('Warning!!! The data has Nan values or does not have a integer or float type in the column which is going to be forecasted!')
+        if data[input_features['Forecasted_param']].isna().any() == True:
+            print('Warning!!! The data has Nan values')
+        if data[input_features['Forecasted_param']].dtype != float and data[input_features['Forecasted_param']].dtype != int:
+            print('Warning!!! The data does not have a integer or float type in the column which is going to be forecasted!')
 
         # Select loss regressor
         input_features['regressor'] = input_features_regressor(regressor=regressor, loss_function=loss_function)
