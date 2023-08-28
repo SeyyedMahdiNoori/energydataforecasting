@@ -16,7 +16,7 @@ import tqdm
 from functools import partialmethod
 import itertools
 # import connectorx as cx
-import tsprial
+import tspiral
 import dateutil
 from dateutil.parser import parse
 from dateutil.parser import ParserError
@@ -395,7 +395,7 @@ class Customers:
             
             elif input_features['algorithm'] == 'iterated':
 
-                self.forecaster = tsprial.forecasting.ForecastingCascade(
+                self.forecaster = tspiral.forecasting.ForecastingCascade(
                 estimator = input_features['regressor'],
                 lags = range(1,self.window_size+1),
                 use_exog = input_features['time_proxy'],
@@ -406,7 +406,7 @@ class Customers:
 
             elif input_features['algorithm'] == 'direct':
 
-                self.forecaster = tsprial.forecasting.ForecastingChain(
+                self.forecaster = tspiral.forecasting.ForecastingChain(
                 estimator = input_features['regressor'],
                 n_estimators =  self.window_size,
                 lags = range(1,self.window_size+1),
@@ -423,7 +423,7 @@ class Customers:
                 else:
                     test_size = self.steps_to_be_forecasted
 
-                self.forecaster = tsprial.forecasting.ForecastingRectified(
+                self.forecaster = tspiral.forecasting.ForecastingRectified(
                             estimator = input_features['regressor'],
                             n_estimators = self.window_size,
                             test_size = test_size,
@@ -439,7 +439,7 @@ class Customers:
                 else:
                     test_size = self.steps_to_be_forecasted
 
-                self.forecaster = tsprial.forecasting.ForecastingStacked(
+                self.forecaster = tspiral.forecasting.ForecastingStacked(
                                     input_features['regressor'],
                                     test_size = test_size,
                                     lags = range(1, self.window_size + 1),
