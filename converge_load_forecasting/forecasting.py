@@ -956,7 +956,7 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
         # Check if the data is in the write formate for forecasting
         if data[input_features['Forecasted_param']].isna().any() == True:
             print('Warning!!! The data has Nan values')
-        if data[input_features['Forecasted_param']].dtype != float and data[input_features['Forecasted_param']].dtype != int:
+        if not np.issubdtype(data[input_features['Forecasted_param']].dtype, np.number):
             print('Warning!!! The data does not have a integer or float type in the column which is going to be forecasted!')
 
         # Select loss regressor
