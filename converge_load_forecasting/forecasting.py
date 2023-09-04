@@ -424,7 +424,7 @@ class Customers:
                     test_size = self.steps_to_be_forecasted
 
                 self.forecaster = tspiral.forecasting.ForecastingRectified(
-                            estimator = input_features['regressor'],
+                            estimators = input_features['regressor'],
                             n_estimators = self.window_size,
                             test_size = test_size,
                             lags = range(1, self.window_size + 1),
@@ -1953,3 +1953,39 @@ def near_cast_mixed(participants: list, non_participants: list, forecasters_file
                              run_sequentially, proxy_measure = pred_participants)
     
     return pred_participants, pred_non_participants
+
+def linear_increase(series: pd.Series, rate: float) -> pd.Series:
+    result = pd.Series(index=series.index)
+    initial_value = 0  # Initial value before linear increase
+    current_value = initial_value
+    consecutive_count = 0  # Counter for consecutive non-zero values
+
+    for idx, val in enumerate(series):
+        if val != 0:
+            consecutive_count += 1
+            result.iloc[idx] = current_value + (rate * (consecutive_count - 1))
+        else:
+            current_value = initial_value  # Reset to initial value
+            result.iloc[idx] = current_value
+            consecutive_count = 0  # Reset consecutive count
+
+    return result
+
+def post_prediction_heat_adjustment(pred:pd.DataFrame, exog:pd.DataFrame, high_temp_limit: float = 30, high_temp_initial: float = 25,
+                                    max_heat_effect: float = 0.5, exponential_decay_factor: float =  0.01, solar_adjustment: float =  4) -> pd.DataFrame:
+    
+    temp = pd.DataFrame({"temperature": exog.temperature})
+    temp_filt = pd.DataFrame({'temperature' : temp.temperature.apply(lambda x: 0 if x < high_temp_limit else 1)})
+    temp_D = temp_filt.resample('D').max()
+    temp_D = temp_D.fillna(0)
+    temp_D['transformed'] = linear_increase(temp_D['temperature'],1)
+    heat_temp = temp_D.transformed.resample('30T').ffill()
+    heat = np.minimum( (1 - np.exp(np.minimum(-exponential_decay_factor*(exog.temperature - high_temp_initial),0))) * heat_temp, max_heat_effect)
+
+    demand = pred.clip(lower = 0)
+    solar = pred.clip(upper = 0)
+
+    demand = heat.loc[pred.index] * demand + demand
+    solar = heat.loc[pred.index]/solar_adjustment * solar + solar
+    
+    return demand + solar
