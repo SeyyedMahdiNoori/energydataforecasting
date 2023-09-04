@@ -12,11 +12,14 @@ from sklearn.metrics import mean_squared_error
 import converge_load_forecasting as cld
 
 # Donwload if data is availbale in csv format
-customersdatapath = './NextGen_example.csv'
-weatherdatapath = './Canberra_weather_data.csv'
+url_data = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/NextGen_example.csv'
+raw_data = pd.read_csv(url_data, sep=',')
 
-data_initialised = cld.initialise(customersdatapath = customersdatapath,
-                                    weatherdatapath = weatherdatapath,
+url_wather = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/Canberra_weather_data.csv'
+weather_data = pd.read_csv(url_wather, sep=',')
+
+data_initialised = cld.initialise(raw_data=raw_data,
+                                    raw_proxy_data= weather_data,
                                     core_usage = 4
                               )
 
@@ -140,7 +143,7 @@ plt.show()
 # # ## technique 6
 # # ################
 
-pv6 = cld.SDD_using_temp_single_node(data_initialised.customers[nmi],time_steps_for_disagg,data_initialised.data_weather,data_initialised.input_features)
+pv6 = cld.SDD_using_temp_single_node(data_initialised.customers[nmi],time_steps_for_disagg,data_initialised.data_proxy,data_initialised.input_features)
 
 # Time series plot
 # ==============================================================================
@@ -158,7 +161,7 @@ plt.show()
 ################
 ## technique 7
 ################
-pv7 = cld.SDD_known_pvs_temp_single_node_algorithm(data_initialised.customers[nmi],time_steps_for_disagg,data_initialised.data_weather,data_initialised.input_features,customers_known_pv)
+pv7 = cld.SDD_known_pvs_temp_single_node_algorithm(data_initialised.customers[nmi],time_steps_for_disagg,data_initialised.data_proxy,data_initialised.input_features,customers_known_pv)
 
 # Time series plot
 # ==============================================================================

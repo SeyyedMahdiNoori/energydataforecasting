@@ -12,9 +12,11 @@ from sklearn.metrics import mean_squared_error
 import converge_load_forecasting as clf 
 
 # # Donwload if data is availbale in csv format
-customersdatapath = './NextGen_example.csv'
+url_data = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/NextGen_example.csv'
+raw_data = pd.read_csv(url_data, sep=',')
 
-data_initialised = clf.initialise(customersdatapath = customersdatapath,
+
+data_initialised = clf.initialise(raw_data= raw_data,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
                               last_observed_window='2018-12-29',
