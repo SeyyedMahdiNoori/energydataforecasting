@@ -10,25 +10,23 @@
 
 import converge_load_forecasting as cld
 import numpy as np
+import pandas as pd
 
 # Donwload if data is availbale in csv format
-customersdatapath = './NextGen_example.csv'
-weatherdatapath = './Canberra_weather_data.csv'
+url_data = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/NextGen_example.csv'
+raw_data = pd.read_csv(url_data, sep=',')
 
-data_initialised = cld.initialise(customersdatapath = customersdatapath,
-                                    weatherdatapath = weatherdatapath,
+url_wather = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/Canberra_weather_data.csv'
+weather_data = pd.read_csv(url_wather, sep=',')
+
+data_initialised = cld.initialise(raw_data=raw_data,
+                                    raw_proxy_data= weather_data,
                                     core_usage = 4
                               )
 
 # # ==================================================
-# # Initialize variables
+# # Initialise variables
 # # ================================================== 
-# # The first step is to create an input_features variable. It can have one of the two following formats.
-
-# # Donwload if data is availbale in csv format
-customersdatapath = './NextGen_example.csv'
-weatherdatapath = './Canberra_weather_data.csv'
-
 customers_nmi_with_pv = data_initialised.customers_nmi
 
 Dates_for_plot_start = '2018-12-23'
@@ -87,13 +85,13 @@ res5.to_csv('dissag_tech5.csv')
 # ################
 # ## Technique 6: Weather Data
 # ################
-res6 = cld.SDD_using_temp_multilple_nodes(data_initialised.customers,time_steps_for_disagg,data_initialised.data_weather,data_initialised.input_features)
+res6 = cld.SDD_using_temp_multilple_nodes(data_initialised.customers,time_steps_for_disagg,data_initialised.data_proxy,data_initialised.input_features)
 print('Disaggregation using Technique 6 is done!')
 res6.to_csv('dissag_tech6.csv')
 
 # # ################
 # # ## Technique 7: Proxy Measurements from Neighbouring Sites and Weather Data
 # # ################
-res7 = cld.SDD_known_pvs_temp_multiple_node_algorithm(data_initialised.customers,time_steps_for_disagg,data_initialised.data_weather,data_initialised.input_features,customers_known_pv)
+res7 = cld.SDD_known_pvs_temp_multiple_node_algorithm(data_initialised.customers,time_steps_for_disagg,data_initialised.data_proxy,data_initialised.input_features,customers_known_pv)
 print('Disaggregation using Technique 7 is done!')
 res7.to_csv('dissag_tech7.csv')

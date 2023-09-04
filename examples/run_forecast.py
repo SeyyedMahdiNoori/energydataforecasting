@@ -24,8 +24,13 @@ from converge_load_forecasting import initialise, forecast_pointbased_multiple_n
 # # The first step is to create an input_features variable. It can have one of the two following formats.
 
 # # Donwload if data is availbale in csv format
-customersdatapath = './NextGen_example.csv'
-data_initialised = initialise(customersdatapath = customersdatapath,
+# customersdatapath = './NextGen_example.csv'
+url_data = 'https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/NextGen_example.csv'
+raw_data = pd.read_csv(url_data, sep=',')
+
+data_initialised = initialise(
+                              raw_data= raw_data,
+                            #   customersdatapath = customersdatapath,
                               forecasted_param = 'active_power',
                               end_training='2018-12-29',
                               last_observed_window='2018-12-29',
