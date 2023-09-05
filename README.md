@@ -1,6 +1,6 @@
 # Introuction
 
-This GitHub repository hosts Python functions created for the Converge Project's forecasting component. To learn more about the project, please visit [here](https://arena.gov.au/projects/project-converge-act-distributed-energy-resources-demonstration-pilot/). The repository offers two primary functions: time-series forecasting for predicting real and reactive electrical power, and time-series disaggregation for breaking down net connection power into solar and demand components. YThe mathematical formulation and details of these functionalities can be found in [1](https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/Disaggregation.pdf) and [2](https://raw.githubusercontent.com/SeyyedMahdiNoori/Forecasting.pdf). Here, we provide a brief overview of the forecasting and disaggregation modules.
+This GitHub repository hosts Python functions created for the Converge Project's forecasting component. To learn more about the project, please visit [here](https://arena.gov.au/projects/project-converge-act-distributed-energy-resources-demonstration-pilot/). The repository offers two primary functions: time-series forecasting for predicting real and reactive electrical power, and time-series disaggregation for breaking down net connection power into solar and demand components. YThe mathematical formulation and details of these functionalities can be found in [[1]](https://raw.githubusercontent.com/SeyyedMahdiNoori/converge_load_forecasting_data/main/Disaggregation.pdf) and [[2]](https://raw.githubusercontent.com/SeyyedMahdiNoori/Forecasting.pdf). Here, we provide a brief overview of the forecasting and disaggregation modules.
 
 ##### Forecasting
 
@@ -29,6 +29,10 @@ This package leverages a powerful combination of libraries, including **[skforec
 
 
 # Examples
+Four example files are added in this package. The examples use [Ausgrid](https://www.ausgrid.com.au/Industry/Our-Research/Data-to-share/Solar-home-electricity-data) and [NextGen](https://dl.acm.org/doi/abs/10.1145/3307772.3331017?casa_token=_QK2JaDahG8AAAAA:E3FwIUqQExbJDcHqOtc8684uzq8WI_eSEN4YokpMtU_pgkqZf5aMInKWTuvoPIlOSsh7MSKUZ3lP-g) publickly available data and show case some of the forecasting and disaggregation functionalities.
 
+
+# Get in Touch
+Feel free to send an email to **mahdi.noori@anu.edu.au**, if you have any question or suggestion.
 
 
