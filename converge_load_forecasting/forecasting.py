@@ -190,7 +190,27 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
                                    freq=freq)
     df_new = data.reindex(set_diff)
     df_new = df_new.interpolate(method = 'linear')
+    
+    try:
+        if df_new.isna().any().any():
+            df_new = df_new.interpolate('bfill')
+    except:
+        try:
+            if df_new.isna().any():
+                df_new = df_new.interpolate('bfill')
+        except:
+            pass
 
+    try:
+        if df_new.isna().any().any():
+            df_new = df_new.interpolate('ffill')
+    except:
+        try:
+            if df_new.isna().any():
+                df_new = df_new.interpolate('ffill')
+        except:
+            pass
+    
     return df_new
 
 def save_forecaster_to_file(data, filepath):
@@ -235,6 +255,36 @@ def fill_input_dates_per_customer(data: pd.DataFrame, input_features: Dict) -> T
     else:
         last_observed_window = min(end_training,data.index[-1].strftime("%Y-%m-%d %H:%M:%S"))
 
+    # steps to be forecasted
+    if input_features['steps_to_be_forecasted'] is None:
+        if input_features['days_to_be_forecasted'] is None:
+            
+            if len(input_features['date_to_be_forecasted']) == 10:
+                delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
+            else:
+                delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d %H:%M:%S') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
+
+            try:
+                freq_str = pd.to_timedelta(data.index.freqstr)
+            except Exception:
+                freq_str = pd.to_timedelta('1' + data.index.freqstr)
+
+            steps_to_be_forecasted = math.floor(delta.total_seconds() / freq_str.total_seconds())
+        
+        else:
+
+            try:
+                freq_str = pd.to_timedelta(data.index.freqstr)
+            except Exception:
+                freq_str = pd.to_timedelta('1' + data.index.freqstr)
+
+            steps_to_be_forecasted = math.floor( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / freq_str.total_seconds())
+    else:
+        steps_to_be_forecasted = input_features['steps_to_be_forecasted']
+
+    if steps_to_be_forecasted < 0:
+        steps_to_be_forecasted = math.floor( ( 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
+
     # Size of each window to be forecasted. A window is considered to be a day, and the resolution of the data is considered as the window size.
     # For example, for a data with resolution 30th minutely, the window size woul be 48.
     if input_features['window_size'] is None:
@@ -242,33 +292,9 @@ def fill_input_dates_per_customer(data: pd.DataFrame, input_features: Dict) -> T
     else:
         window_size = min(input_features['window_size'], int(len(data)/2) )
 
-    # days to be forecasted
-    if input_features['days_to_be_forecasted'] is None:
-        
-        if len(input_features['date_to_be_forecasted']) == 10:
-            delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
-        else:
-            delta = datetime.datetime.strptime(input_features['date_to_be_forecasted'],'%Y-%m-%d %H:%M:%S') - datetime.datetime.strptime(last_observed_window,'%Y-%m-%d %H:%M:%S')
+    if window_size == 0:
+        raise ValueError('If data resolution is less than daily, window_size should be added as an input in the intialise function.')
 
-        try:
-            freq_str = pd.to_timedelta(data.index.freqstr)
-        except Exception:
-            freq_str = pd.to_timedelta('1' + data.index.freqstr)
-
-        steps_to_be_forecasted = math.floor(delta.total_seconds() / freq_str.total_seconds())
-    
-    else:
-
-        try:
-            freq_str = pd.to_timedelta(data.index.freqstr)
-        except Exception:
-            freq_str = pd.to_timedelta('1' + data.index.freqstr)
-
-        steps_to_be_forecasted = math.floor( ( input_features['days_to_be_forecasted'] * 24 * 3600)  / freq_str.total_seconds())
-
-    if steps_to_be_forecasted < 0:
-        steps_to_be_forecasted = math.floor( ( 24 * 3600)  / pd.to_timedelta(data.index.freqstr).total_seconds())
-        
     # data frequency
     data_freq = data.index.inferred_freq
 
@@ -735,6 +761,15 @@ def input_features_window_size(window_size: Union[str,None]) -> str:
     
     return window_size
 
+def input_features_steps_to_be_forecasted(steps_to_be_forecasted: Union[str,None]) -> str:
+
+    if steps_to_be_forecasted is None or type(steps_to_be_forecasted) == int:
+        pass
+    else: 
+        raise ValueError('steps_to_be_forecasted should be an integer')
+    
+    return steps_to_be_forecasted
+
 def input_features_date_and_days_to_be_forecasted(days_to_be_forecasted: Union[None,str], date_to_be_forecasted: Union[None,str]) -> Tuple[str,str]:
 
     if days_to_be_forecasted is not None and date_to_be_forecasted is not None:
@@ -881,7 +916,7 @@ def check_data_nmi_datetime(data: pd.DataFrame) -> Tuple[bool,pd.DataFrame]:
 def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, last_observed_window: Union[str, None] = None,
-                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None,
+                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None, steps_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None,
                 loss_function: Union[str, None] = None, time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None,
                 run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
@@ -949,6 +984,9 @@ def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.Da
 
         # The number of days to be forecasted.
         input_features['days_to_be_forecasted'], input_features['date_to_be_forecasted'] = input_features_date_and_days_to_be_forecasted(days_to_be_forecasted=days_to_be_forecasted, date_to_be_forecasted=date_to_be_forecasted)
+
+        # The number of steps to be forecasted.
+        input_features['steps_to_be_forecasted'] = input_features_steps_to_be_forecasted(steps_to_be_forecasted=steps_to_be_forecasted)
 
         # number of processes parallel programming.
         input_features['core_usage'] = input_features_core_usage(core_usage=core_usage)
