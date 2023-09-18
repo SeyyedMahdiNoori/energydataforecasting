@@ -91,7 +91,7 @@ def prepare_proxy_data_for_training(time_series_data_index: pd.DatetimeIndex, da
 
     if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
         raise TypeError("time_series_data_index must be a pandas DatetimeIndex")
-    elif type(data_proxy) is not pd.DataFrame:
+    elif type(data_proxy) is not pd.DataFrame and type(data_proxy) is not pd.Series:
         raise TypeError("data_proxy must be a pandas DataFrame")
     
     # check the frequncy of the time_series and the data_proxy
@@ -1755,6 +1755,21 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     customer.data['demand'] = customer.data[input_features["Forecasted_param"]].clip(lower = 0)
     customer.data['solar'] = customer.data[input_features["Forecasted_param"]].clip(upper = 0)
 
+    try:
+        customer.interval
+    except:
+        customer.interval = False
+
+    if customer.interval:
+        prediction = run_long_term_interval(customer, input_features, data_proxy, original_param)
+    else:
+        prediction = run_long_term_pointbase(customer, input_features, data_proxy, original_param)
+
+    return prediction
+
+
+def run_long_term_interval(customer: Customers, input_features: Dict, data_proxy: pd.DataFrame, original_param: str) -> pd.DataFrame:
+
     # # forecast demand
     print('demand prediction')
     input_features["Forecasted_param"] = 'demand'
@@ -1773,8 +1788,8 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
-    demand_coeff = np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10))
-    solar_coeff = np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10))
+    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.5)
+    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.5)
     
     if math.isnan(solar_coeff) == True:
         solar_coeff = 0
@@ -1789,12 +1804,50 @@ def long_term_load_forecasting_single_node(customer: Customers, input_features: 
     pred_upper = prediction_demand.loc[customer.nmi].upper_bound * demand_coeff + prediction_solar.loc[customer.nmi].upper_bound
     prediction = pd.DataFrame({input_features["Forecasted_param"]: pred.values, 'lower_bound': pred_lower.values, 'upper_bound': pred_upper.values}
                             , index= prediction_solar.index)
+    
+    return prediction
 
+def run_long_term_pointbase(customer: Customers, input_features: Dict, data_proxy: pd.DataFrame, original_param: str) -> pd.DataFrame:
+
+    # # forecast demand
+    print('demand prediction')
+    input_features["Forecasted_param"] = 'demand'
+    prediction_demand = forecast_pointbased_single_node(customer,input_features,data_proxy[['temp','humidity']])
+    
+     # # adjust solar predictions (making it zero if it is negative)
+    prediction_demand.loc[customer.nmi][prediction_demand.loc[customer.nmi] < 0 ] = 0
+
+    # # forecast solar
+    print('solar prediction')
+    input_features["Forecasted_param"] = 'solar'
+    prediction_solar = forecast_pointbased_single_node(customer,input_features,data_proxy[['temp','humidity','solarradiation']])
+    
+    # # adjust solar predictions based on the solarradiation values (making it zero for early morning and late night time steps, and if it is positive)
+    prediction_solar.loc[customer.nmi][prediction_solar.loc[customer.nmi] > 0 ] = 0
+    prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
+
+    # # adjust predictions based on the maximum and minmum values in the data
+    demand_coeff = 1 # min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.5)
+    solar_coeff = 1 # min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.5)
+    
+    if math.isnan(solar_coeff) == True:
+        solar_coeff = 0
+
+    if math.isnan(demand_coeff) == True:
+        demand_coeff = 0
+
+    # # Aggregate solar and demand
+    input_features["Forecasted_param"] = original_param
+    pred = prediction_demand.loc[customer.nmi].demand * demand_coeff + prediction_solar.loc[customer.nmi].solar * solar_coeff
+    prediction = pd.DataFrame({input_features["Forecasted_param"]: pred.values}
+                            , index= prediction_solar.index)
+    
     return prediction
 
 
 
-def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: pd.DataFrame) -> pd.DataFrame:
+
+def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: pd.DataFrame, interval: bool = True) -> pd.DataFrame:
     """
     forecast_pointbased_autoregressive_multiple_nodes(customers_nmi,input_features)
 
@@ -1802,6 +1855,8 @@ def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int
     It requires two inputs. The first input is a dictionry with keys being customers' nmi and values being their asscoated Customer instance generated by the initilase function. The second input is the input_features which is a dictionary 
     of input preferences generated by the initilase function.
     """
+
+    Customers.interval = interval
 
     predictions_prallel = pool_executor_parallel(long_term_load_forecasting_single_node,customers.values(),input_features, data_proxy)
 
@@ -1811,8 +1866,9 @@ def long_term_load_forecasting_multiple_nodes_parallel(customers: Dict[Union[int
     return predictions_prallel
 
 
-def long_term_load_forecasting_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None) -> pd.DataFrame:
+def long_term_load_forecasting_multiple_nodes(customers: Dict[Union[int,str],Customers], input_features: Dict, data_proxy: Union[pd.DataFrame, None] = None, interval: bool = True) -> pd.DataFrame:
 
+    Customers.interval = interval
 
     preds = [long_term_load_forecasting_single_node(customers[i],input_features,data_proxy) for i in customers.keys()]
 
