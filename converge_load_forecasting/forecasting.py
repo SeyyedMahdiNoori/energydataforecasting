@@ -1788,14 +1788,14 @@ def run_long_term_interval(customer: Customers, input_features: Dict, data_proxy
     prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
-    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.5)
-    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.5)
+    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),2)
+    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),2)
     
-    if math.isnan(solar_coeff) == True:
-        solar_coeff = 0
-
     if math.isnan(demand_coeff) == True:
         demand_coeff = 0
+
+    if math.isnan(solar_coeff) == True:
+        solar_coeff = 0
 
     # # Aggregate solar and demand
     input_features["Forecasted_param"] = original_param
@@ -1827,8 +1827,8 @@ def run_long_term_pointbase(customer: Customers, input_features: Dict, data_prox
     prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
-    demand_coeff = 1 # min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.5)
-    solar_coeff = 1 # min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.5)
+    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.1)
+    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.1)
     
     if math.isnan(solar_coeff) == True:
         solar_coeff = 0
@@ -2083,3 +2083,22 @@ def post_prediction_heat_adjustment(pred:pd.DataFrame, exog:pd.DataFrame, high_t
     solar = heat.loc[pred.index]/solar_adjustment * solar + solar
     
     return demand + solar
+
+def read_stacked_forecast(path_real: str, path_reactive: str) -> pd.DataFrame:
+    
+    real = read_stacked_forecast_indiv(path=path_real,name='real_power_w')
+    reactive = read_stacked_forecast_indiv(path=path_reactive,name='reactive_power_var')
+    data = pd.concat([real,reactive],axis=1)
+
+    return data
+
+def read_stacked_forecast_indiv(path: str, name: str) -> pd.DataFrame:
+    df = clf.read_data(customersdatapath=path,raw_data=None)
+    check_time_zone, df = clf.check_data_nmi_datetime(data=df)
+    df = clf.format_datetime(check_time_zone=check_time_zone, data=df, input_features={'time_zone': clf.input_features_time_zone(time_zone=None)}).drop(columns='nmi')
+    df = df.set_index('datetime').stack()
+    df = pd.DataFrame({name: df},index=df.index)
+    df.index.set_names('nmi', level=1, inplace=True)
+    df = df.swaplevel()
+
+    return df
