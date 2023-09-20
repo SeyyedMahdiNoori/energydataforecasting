@@ -2093,9 +2093,9 @@ def read_stacked_forecast(path_real: str, path_reactive: str) -> pd.DataFrame:
     return data
 
 def read_stacked_forecast_indiv(path: str, name: str) -> pd.DataFrame:
-    df = clf.read_data(customersdatapath=path,raw_data=None)
-    check_time_zone, df = clf.check_data_nmi_datetime(data=df)
-    df = clf.format_datetime(check_time_zone=check_time_zone, data=df, input_features={'time_zone': clf.input_features_time_zone(time_zone=None)}).drop(columns='nmi')
+    df = read_data(customersdatapath=path,raw_data=None)
+    check_time_zone, df = check_data_nmi_datetime(data=df)
+    df = format_datetime(check_time_zone=check_time_zone, data=df, input_features={'time_zone': input_features_time_zone(time_zone=None)}).drop(columns='nmi')
     df = df.set_index('datetime').stack()
     df = pd.DataFrame({name: df},index=df.index)
     df.index.set_names('nmi', level=1, inplace=True)
