@@ -1788,8 +1788,8 @@ def run_long_term_interval(customer: Customers, input_features: Dict, data_proxy
     prediction_solar.loc[customer.nmi][prepare_proxy_data_for_training(prediction_solar.loc[customer.nmi].index,data_proxy['solarradiation']) < 50 ] = 0
 
     # # adjust predictions based on the maximum and minmum values in the data
-    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),2)
-    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),2)
+    demand_coeff = min(np.mean(customer.data['demand'].nlargest(10)) / np.mean(prediction_demand.demand.nlargest(10)),1.1)
+    solar_coeff = min(np.mean(customer.data['solar'].nsmallest(10))/ np.mean(prediction_solar.solar.nsmallest(10)),1.1)
     
     if math.isnan(demand_coeff) == True:
         demand_coeff = 0
