@@ -78,17 +78,25 @@ def encoding_cyclical_time_features(time_series_data_index: pd.DatetimeIndex) ->
     return exog_time
 
 def data_frequency_in_minutes(time_series_data_index: pd.DatetimeIndex) -> int:
-    
+    '''
+    data_frequency_in_minutes(time_series_data_index: pd.DatetimeIndex) -> int
+    This function takes a pandas time series and returns an integer that shows the data frequency in minutes.
+    '''
+
     if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
         raise TypeError("time_series_data_index must be a pandas DatetimeIndex") 
     
     try:
-        return pd.Timedelta(time_series_data_index.freqstr).total_seconds()/60
+        return int(pd.Timedelta(time_series_data_index.freqstr).total_seconds()/60)
     except ValueError:
-        return pd.Timedelta('1' + time_series_data_index.freqstr).total_seconds()/60 
+        return int(pd.Timedelta('1' + time_series_data_index.freqstr).total_seconds()/60) 
 
 def prepare_proxy_data_for_training(time_series_data_index: pd.DatetimeIndex, data_proxy: pd.DataFrame) -> pd.DataFrame:
-
+    '''
+    prepare_proxy_data_for_training(time_series_data_index: pd.DatetimeIndex, data_proxy: pd.DataFrame) -> pd.DataFrame
+    This function takes a datetime index (should be the index of the time-series which is going to be forecasted), and a pandas data frame which will be used as exogenous variable. The function matches the frequncy of 
+    the data_proxy with the input datetime index by either filling the missing data, or down sampling if the data proxy has a higher resolution.
+    '''
     if type(time_series_data_index) is not pd.core.indexes.datetimes.DatetimeIndex:
         raise TypeError("time_series_data_index must be a pandas DatetimeIndex")
     elif type(data_proxy) is not pd.DataFrame and type(data_proxy) is not pd.Series:
@@ -170,8 +178,8 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
     '''
     fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame
     
-    This function takes dataFrame with datetimeIndex. It fills the missing rows in the dateTime index
-    and fills the added data values with zeros.
+    This function takes dataFrame with datetimeIndex. It fills the missing rows in the datetime index
+    and fills the using a combination of linear interpolation, back-fill and forward-fill approaches.
     '''
 
     try:
@@ -213,12 +221,19 @@ def fill_in_missing_data(data: pd.DataFrame) -> pd.DataFrame:
     
     return df_new
 
-def save_forecaster_to_file(data, filepath):
-    # Save the list to disk using joblib.dump
+def save_forecaster_to_file(data: Any, filepath: str):
+    '''
+    save_forecaster_to_file(data: Any, filepath: str)
+    Save the list to disk using joblib.dump
+    '''
     joblib.dump(data, filepath)
 
-def load_forecaster_from_file(filepath):
-    # Load the list from disk using joblib.load
+def load_forecaster_from_file(filepath: str):
+    '''
+    load_forecaster_from_file(filepath: str)
+    Load the list from disk using joblib.load
+    '''
+    
     loaded_forecaster = joblib.load(filepath)
     return loaded_forecaster
 
@@ -305,8 +320,13 @@ def fill_input_dates_per_customer(data: pd.DataFrame, input_features: Dict) -> T
 
     return start_training, end_training, last_observed_window, window_size, data, data_freq, steps_to_be_forecasted
 
-def proxy_input_data_cleaner(raw_proxy_data, input_features, tzinfo):
-
+def proxy_input_data_cleaner(raw_proxy_data: pd.DataFrame, input_features: Dict, tzinfo: datetime.tzinfo) -> pd.DataFrame:
+    '''
+    proxy_input_data_cleaner(raw_proxy_data: pd.DataFrame, input_features: Dict, tzinfo: datetime.tzinfo) -> pd.DataFrame
+    Cleans the input data frame to be used for the forecasting functions. It checks the data frame index for time zone, 
+    creates DatetimeIndex, fills the missing rows in the data frame and returns a data frame with Datetimeindex with the same timezone as 
+    the time-series to be forecasted (that info is stored in the input_features dictionary under input_features['time_zone']).
+    '''
     try:        
         raw_proxy_data.rename(columns={"PeriodStart": "datetime"},inplace=True)
     except:
@@ -752,16 +772,16 @@ def input_features_training_dates(training_dates: Union[str,None]) -> str:
     
     return training_dates
 
-def input_features_window_size(window_size: Union[str,None]) -> str:
+def input_features_window_size(window_size: Union[int,None]) -> Union[int,None]:
 
     if window_size is None or type(window_size) == int:
         pass
     else:
-        raise ValueError('window size should be an integer')
+        raise ValueError('window size should be an integer or left blank')
     
     return window_size
 
-def input_features_steps_to_be_forecasted(steps_to_be_forecasted: Union[str,None]) -> str:
+def input_features_steps_to_be_forecasted(steps_to_be_forecasted: Union[int,None]) ->  Union[int,None]:
 
     if steps_to_be_forecasted is None or type(steps_to_be_forecasted) == int:
         pass
@@ -770,7 +790,7 @@ def input_features_steps_to_be_forecasted(steps_to_be_forecasted: Union[str,None
     
     return steps_to_be_forecasted
 
-def input_features_date_and_days_to_be_forecasted(days_to_be_forecasted: Union[None,str], date_to_be_forecasted: Union[None,str]) -> Tuple[str,str]:
+def input_features_date_and_days_to_be_forecasted(days_to_be_forecasted: Union[None,int], date_to_be_forecasted: Union[None,str]) -> Tuple[Union[None,int],Union[None,str]]:
 
     if days_to_be_forecasted is not None and date_to_be_forecasted is not None:
         raise ValueError('Only of the days_to_be_forecasted or date_to_be_forecasted should be given')
@@ -789,7 +809,7 @@ def input_features_date_and_days_to_be_forecasted(days_to_be_forecasted: Union[N
     
     return days_to_be_forecasted, date_to_be_forecasted 
 
-def input_features_core_usage(core_usage: Union[None,str]):
+def input_features_core_usage(core_usage: Union[None,int]) -> int:
     
     if core_usage is None:
         core_usage = 8
@@ -867,7 +887,7 @@ def input_features_run_sequentially(run_sequentially: Union[None,bool]) -> bool:
     
     return run_sequentially
 
-def input_features_probabilistic_algorithm(probabilistic_algorithm: Union[None,str]) -> Tuple[str,None]:
+def input_features_probabilistic_algorithm(probabilistic_algorithm: Union[None,str]) -> Union[str,None]:
 
     if probabilistic_algorithm is None or probabilistic_algorithm == 'bootstrap' or probabilistic_algorithm == 'jackknife':
         pass
@@ -876,7 +896,7 @@ def input_features_probabilistic_algorithm(probabilistic_algorithm: Union[None,s
 
     return probabilistic_algorithm
 
-def input_features_save_forecaster_path(save_forecaster_path: Union[None,str], save_forecaster: Union[None,bool]) -> Tuple[str,None]:
+def input_features_save_forecaster_path(save_forecaster_path: Union[None,str], save_forecaster: Union[None,bool]) -> Union[str,None]:
 
     if save_forecaster_path is None:
         if save_forecaster is None or save_forecaster == False:
@@ -916,7 +936,7 @@ def check_data_nmi_datetime(data: pd.DataFrame) -> Tuple[bool,pd.DataFrame]:
 def initialise(customersdatapath: Union[str, None] = None, raw_data: Union[pd.DataFrame, None] = None, forecasted_param: Union[str, None] = None,
                 proxydatapath: Union[str, None] = None, raw_proxy_data: Union[pd.DataFrame, None] = None,
                 start_training: Union[str, None] = None, end_training: Union[str, None] = None, last_observed_window: Union[str, None] = None,
-                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[int, None] = None, steps_to_be_forecasted: Union[int, None] = None,
+                window_size: Union[int, None] = None, days_to_be_forecasted: Union[int, None] = None, date_to_be_forecasted: Union[str, None] = None, steps_to_be_forecasted: Union[int, None] = None,
                 core_usage: Union[int, None] = None, db_url: Union[str, None] = None, db_table_names: Union[List[int], None] = None, regressor: Union[str, None] = None,
                 loss_function: Union[str, None] = None, time_proxy: Union[bool, None] = None, algorithm: Union[str, None] = None,
                 run_sequentially: Union[bool, None] = None, probabilistic_algorithm: Union[str, None] = None,
