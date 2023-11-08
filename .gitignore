@@ -19,6 +19,7 @@ approacheTBA.py
 test123.py
 NextGen.csv
 /converge_load_forecasting.egg-info
+/energydataforecasting.egg-info
 development.py
 /development
 /converge_load_forecasting/__pycache__
