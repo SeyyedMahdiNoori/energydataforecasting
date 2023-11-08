@@ -28,7 +28,7 @@ import xgboost
 import math
 import mapie
 from threadpoolctl import threadpool_limits
-from prophet import Prophet
+# from prophet import Prophet
 import joblib
 import os
 
@@ -493,21 +493,21 @@ class Customers:
                                                         )
                 self.forecaster.fit(self.exog, self.data.loc[self.start_training:self.end_training][input_features['Forecasted_param']])
 
-            elif input_features['algorithm'] == 'prophet':
+            # elif input_features['algorithm'] == 'prophet':
 
-                self.forecaster = Prophet()
+            #     self.forecaster = Prophet()
 
-                if self.data.index.tzinfo is not None:
-                    data_in = pd.DataFrame({'ds': self.data.index.tz_convert(None), 'y':self.data[input_features['Forecasted_param']].values})
-                else:
-                    data_in = pd.DataFrame({'ds': self.data.index, 'y':self.data[input_features['Forecasted_param']].values})
+            #     if self.data.index.tzinfo is not None:
+            #         data_in = pd.DataFrame({'ds': self.data.index.tz_convert(None), 'y':self.data[input_features['Forecasted_param']].values})
+            #     else:
+            #         data_in = pd.DataFrame({'ds': self.data.index, 'y':self.data[input_features['Forecasted_param']].values})
                 
-                if self.exog is not None:
-                    exog = self.exog.reset_index()
-                    exog.drop('index', axis = 1,inplace = True)
-                    data_in = pd.concat([data_in,exog],axis=1)
+            #     if self.exog is not None:
+            #         exog = self.exog.reset_index()
+            #         exog.drop('index', axis = 1,inplace = True)
+            #         data_in = pd.concat([data_in,exog],axis=1)
 
-                self.forecaster.fit(data_in)
+            #     self.forecaster.fit(data_in)
             
             if input_features['save_forecaster_path'] is not None:
                 save_forecaster_to_file(self.forecaster, input_features['save_forecaster_path'] + '/' + self.nmi + '.joblib')
@@ -529,24 +529,24 @@ class Customers:
                                                         # last_window = self.data[input_features['Forecasted_param']].loc[(datetime.datetime.strptime(self.last_observed_window,"%Y-%m-%d %H:%M:%S") - datetime.timedelta(days=self.days_to_be_forecasted)).strftime("%Y-%m-%d %H:%M:%S"):self.last_observed_window],
                                                         exog = self.exog_f).to_frame().set_index(self.new_index)
 
-        elif input_features['algorithm'] == 'prophet':
+        # elif input_features['algorithm'] == 'prophet':
 
-            # future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
-            future = pd.DataFrame({'ds': self.exog_f.index})
+        #     # future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
+        #     future = pd.DataFrame({'ds': self.exog_f.index})
             
-            if self.exog_f is not None:
-                exog_f = self.exog_f.reset_index()
-                exog_f.drop('index', axis = 1,inplace = True)
-                exog_f.index = future.index
-                future = pd.concat([future,exog_f],axis=1)
+        #     if self.exog_f is not None:
+        #         exog_f = self.exog_f.reset_index()
+        #         exog_f.drop('index', axis = 1,inplace = True)
+        #         exog_f.index = future.index
+        #         future = pd.concat([future,exog_f],axis=1)
 
-            self.predictions = self.forecaster.predict(future)
-            self.predictions = pd.DataFrame({'datetime': self.predictions['ds'] , input_features['Forecasted_param']: self.predictions['yhat']})
+        #     self.predictions = self.forecaster.predict(future)
+        #     self.predictions = pd.DataFrame({'datetime': self.predictions['ds'] , input_features['Forecasted_param']: self.predictions['yhat']})
 
-            if self.data.index.tzinfo is not None:
-                self.predictions['datetime'] = pd.to_datetime( self.predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+        #     if self.data.index.tzinfo is not None:
+        #         self.predictions['datetime'] = pd.to_datetime( self.predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
 
-            self.predictions = self.predictions.set_index('datetime')
+        #     self.predictions = self.predictions.set_index('datetime')
 
         else:
 
@@ -571,23 +571,23 @@ class Customers:
                                                                             ).set_index(self.new_index)
 
 
-            elif input_features['algorithm'] == 'prophet':
+            # elif input_features['algorithm'] == 'prophet':
 
-                future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
+            #     future = self.forecaster.make_future_dataframe(periods = len(self.new_index), freq = self.data.index.freqstr).iloc[-len(self.new_index):]
                 
-                if self.exog_f is not None:
-                    exog_f = self.exog_f.reset_index()
-                    exog_f.drop('index', axis = 1,inplace = True)
-                    exog_f.index = future.index
-                    future = pd.concat([future,exog_f],axis=1)
+            #     if self.exog_f is not None:
+            #         exog_f = self.exog_f.reset_index()
+            #         exog_f.drop('index', axis = 1,inplace = True)
+            #         exog_f.index = future.index
+            #         future = pd.concat([future,exog_f],axis=1)
 
-                self.interval_predictions = self.forecaster.predict(future)
-                self.interval_predictions = pd.DataFrame({'datetime': self.interval_predictions['ds'] , 'pred': self.interval_predictions['yhat'],'upper_bound': self.interval_predictions['yhat_upper'],'lower_bound': self.interval_predictions['yhat_lower'] })
+            #     self.interval_predictions = self.forecaster.predict(future)
+            #     self.interval_predictions = pd.DataFrame({'datetime': self.interval_predictions['ds'] , 'pred': self.interval_predictions['yhat'],'upper_bound': self.interval_predictions['yhat_upper'],'lower_bound': self.interval_predictions['yhat_lower'] })
 
-                if self.data.index.tzinfo is not None:
-                    self.interval_predictions['datetime'] = pd.to_datetime( self.interval_predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
+            #     if self.data.index.tzinfo is not None:
+            #         self.interval_predictions['datetime'] = pd.to_datetime( self.interval_predictions['datetime'], utc=True, infer_datetime_format=True).dt.tz_convert(input_features['time_zone'])
 
-                self.interval_predictions = self.interval_predictions.set_index('datetime')
+            #     self.interval_predictions = self.interval_predictions.set_index('datetime')
 
 
             else:
@@ -868,7 +868,7 @@ def input_features_algorithm(algorithm: Union[None,str]) -> str:
 
     if algorithm is None:
         algorithm = 'iterated'
-    elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking' or algorithm == 'prophet':
+    elif algorithm == 'iterated' or algorithm == 'direct' or algorithm == 'rectified' or algorithm == 'stacking': # or algorithm == 'prophet':
         pass
     else:
         raise ValueError(f"{algorithm} is NOT a valid algorithm. The algorithm should be 'iterated' or 'direct' or 'stacking' or 'rectified' or 'prophet'.")

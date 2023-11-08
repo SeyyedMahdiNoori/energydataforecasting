@@ -4,7 +4,7 @@ This GitHub repository hosts Python functions created for the Converge Project's
 
 ##### Forecasting
 
-Most time-series forecasting approaches can be identfied depending on their uniques responses to the following four questions:
+Most time-series forecasting approaches can be identified depending on their unique responses to the following four questions:
     
 * What data is available for training the forecasting model? The answer to this question dictates the input to the forecasting approaches.
 
