@@ -7,7 +7,7 @@ with open("README.md" , "r")as fh:
 
 setup(
     name='energydataforecasting',
-    version='v0.0.9',
+    version='v0.1.0',
     author='Seyyed Mahdi Noori Rahim Abadi, Dan Gordon',
     author_email='mahdi.noori@anu.edu.au',
     long_description=long_description,
