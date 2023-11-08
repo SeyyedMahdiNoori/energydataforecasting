@@ -12,7 +12,7 @@ setup(
     author_email='mahdi.noori@anu.edu.au',
     long_description=long_description,
     long_description_content_type = 'text/markdown',
-    packages=['converge_load_forecasting'],
+    packages=['energydataforecasting'],
     install_requires=[
         'python-dateutil',
         'datetime',
